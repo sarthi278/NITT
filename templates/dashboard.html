@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1 class="page-title">Welcome to the workspace</h1>
+    <p class="page-subtitle">You’re signed in as <strong>{{ role }}</strong>. Choose a task from the navigation.</p>
+  </div>
+</div>
+{% if role == "Salesman" %}
+<div class="card"><div class="card-body"><h2 class="h5">Sales order entry is coming next</h2><p class="text-secondary mb-0">Your account is ready. The mobile order workflow is part of the upcoming sales phase.</p></div></div>
+{% elif role == "Accountant" %}
+<div class="row g-3">
+  <div class="col-12 col-sm-6 col-lg-3"><a class="card h-100 text-decoration-none text-reset" href="{% url 'stock' %}"><div class="card-body"><div class="text-success fw-bold mb-2">01 · Inventory</div><h2 class="h5">Check stock</h2><p class="text-secondary mb-0">Review current ledger balances.</p></div></a></div>
+  <div class="col-12 col-sm-6 col-lg-3"><a class="card h-100 text-decoration-none text-reset" href="{% url 'ledger' %}"><div class="card-body"><div class="text-success fw-bold mb-2">02 · Traceability</div><h2 class="h5">View ledger</h2><p class="text-secondary mb-0">Trace stock to its source document.</p></div></a></div>
+</div>
+{% else %}
+<div class="row g-3">
+  <div class="col-12 col-sm-6 col-lg-3"><a class="card h-100 text-decoration-none text-reset" href="{% url 'production' %}"><div class="card-body"><div class="text-success fw-bold mb-2">01 · Production</div><h2 class="h5">Log a run</h2><p class="text-secondary mb-0">Record output and material usage.</p></div></a></div>
+  <div class="col-12 col-sm-6 col-lg-3"><a class="card h-100 text-decoration-none text-reset" href="{% url 'purchase' %}"><div class="card-body"><div class="text-success fw-bold mb-2">02 · Purchasing</div><h2 class="h5">Receive stock</h2><p class="text-secondary mb-0">Post raw and packaging purchases.</p></div></a></div>
+  <div class="col-12 col-sm-6 col-lg-3"><a class="card h-100 text-decoration-none text-reset" href="{% url 'stock' %}"><div class="card-body"><div class="text-success fw-bold mb-2">03 · Inventory</div><h2 class="h5">Check stock</h2><p class="text-secondary mb-0">Review current ledger balances.</p></div></a></div>
+  <div class="col-12 col-sm-6 col-lg-3"><a class="card h-100 text-decoration-none text-reset" href="{% url 'ledger' %}"><div class="card-body"><div class="text-success fw-bold mb-2">04 · Traceability</div><h2 class="h5">View ledger</h2><p class="text-secondary mb-0">Trace stock to its source document.</p></div></a></div>
+</div>
+{% endif %}
+{% endblock %}

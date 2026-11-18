@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Stock ledger · Order-to-Audit{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1 class="page-title">Stock ledger</h1>
+    <p class="page-subtitle">Every inventory movement with its source document.</p>
+  </div>
+  <a class="btn btn-outline-success" href="{% url 'stock' %}">Stock summary</a>
+</div>
+<div class="card">
+  <div class="table-responsive border-0">
+    <table class="table">
+      <thead><tr><th>Time</th><th>Item</th><th>Movement</th><th class="text-end">In</th><th class="text-end">Out</th><th>Source document</th><th>User</th></tr></thead>
+      <tbody>
+      {% for m in movements %}
+        <tr>
+          <td class="text-nowrap">{{ m.timestamp|date:"d M Y, H:i" }}</td>
+          <td class="fw-semibold">{{ m.item.name }}</td>
+          <td>{{ m.get_movement_type_display }}</td>
+          <td class="text-end text-success">{{ m.qty_in|floatformat:3 }}</td>
+          <td class="text-end text-danger">{{ m.qty_out|floatformat:3 }}</td>
+          <td>{{ m.source_doc_type }} <span class="text-secondary">#{{ m.source_doc_id }}</span></td>
+          <td>{{ m.user.username|default:"System" }}</td>
+        </tr>
+      {% empty %}
+        <tr><td class="text-center text-secondary py-4" colspan="7">No stock movements have been posted.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

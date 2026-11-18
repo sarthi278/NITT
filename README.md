@@ -1,6 +1,6 @@
 # Order-to-Audit Prototype
 
-This repository follows the internship build in phases. Phase 0 establishes the Django foundation.
+This repository follows the internship build in phases. Phases 0-2 establish the Django foundation, inventory ledger and production workflows.
 
 ## Run with Docker Compose
 
@@ -51,3 +51,7 @@ pytest -q
 Test logins use password `demo123`: `sales-a`, `sales-b`, `admin`, `production`, `accountant`, `owner`.
 
 The seed creates Retailer A, Distributor B, Murukku 200 g, its BOM and benchmark opening balances. Inventory balances are not stored on Item; they are computed from append-only `StockMovement.qty_in - qty_out`.
+
+## Phase 2 status
+
+The production role can post flour purchases and benchmark runs from the responsive Bootstrap screens. Purchases and production post their stock movements inside database transactions. The stock summary and ledger screens are available to production, admin, owner and accountant roles. The mobile navigation collapses into a menu, tables scroll within their container on narrow screens, and dashboard actions are role-specific.

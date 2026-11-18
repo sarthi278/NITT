@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Stock summary · Order-to-Audit{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1 class="page-title">Stock summary</h1>
+    <p class="page-subtitle">Current balances calculated from the stock movement ledger.</p>
+  </div>
+  <a class="btn btn-outline-success" href="{% url 'ledger' %}">View stock ledger</a>
+</div>
+<div class="card">
+  <div class="table-responsive border-0">
+    <table class="table">
+      <thead><tr><th>Item</th><th>Category</th><th>Base unit</th><th class="text-end">Closing balance</th></tr></thead>
+      <tbody>
+      {% for row in items %}
+        <tr>
+          <td class="fw-semibold">{{ row.item.name }}<div class="small text-secondary">{{ row.item.sku }}</div></td>
+          <td><span class="badge rounded-pill text-bg-light">{{ row.item.get_item_type_display }}</span></td>
+          <td>{{ row.item.base_unit }}</td>
+          <td class="text-end fw-semibold">{{ row.balance|floatformat:3 }}</td>
+        </tr>
+      {% empty %}
+        <tr><td class="text-center text-secondary py-4" colspan="4">No inventory items are set up yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

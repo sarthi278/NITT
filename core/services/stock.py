@@ -31,3 +31,11 @@ def create_movement(*, item, qty_in=ZERO, qty_out=ZERO, movement_type,
         source_doc_id=source_doc_id,
         user=user,
     )
+
+
+def require_stock(item, required_qty):
+    available = balance(item)
+    if available < required_qty:
+        raise ValueError(
+            f"Insufficient stock for {item.name}: need {required_qty}, have {available}"
+        )

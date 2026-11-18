@@ -137,3 +137,41 @@ class AuditLog(models.Model):
     old_value = models.TextField(blank=True)
     new_value = models.TextField(blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)
+
+
+class Purchase(models.Model):
+    number = models.CharField(max_length=40, unique=True)
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT)
+    purchase_date = models.DateField()
+    posted = models.BooleanField(default=False)
+
+
+class PurchaseLine(models.Model):
+    purchase = models.ForeignKey(Purchase, on_delete=models.CASCADE, related_name="lines")
+    item = models.ForeignKey(Item, on_delete=models.PROTECT)
+    quantity = models.DecimalField(**QUANTITY)
+    unit = models.CharField(max_length=20)
+    unit_cost = models.DecimalField(**MONEY)
+
+
+class ProductionRun(models.Model):
+    number = models.CharField(max_length=40, unique=True)
+    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    batch_count = models.DecimalField(default=Decimal("1"), **QUANTITY)
+    expected_output = models.PositiveIntegerField()
+    actual_good_output = models.PositiveIntegerField()
+    damaged_pouches = models.PositiveIntegerField(default=0)
+    labour_cost = models.DecimalField(default=Decimal("0"), **MONEY)
+    power_gas_cost = models.DecimalField(default=Decimal("0"), **MONEY)
+    run_date = models.DateField()
+    posted = models.BooleanField(default=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+
+
+class ProductionConsumption(models.Model):
+    run = models.ForeignKey(ProductionRun, on_delete=models.CASCADE, related_name="consumptions")
+    item = models.ForeignKey(Item, on_delete=models.PROTECT)
+    planned_qty = models.DecimalField(**QUANTITY)
+    actual_qty = models.DecimalField(**QUANTITY)
+    variance_pct = models.DecimalField(**QUANTITY)
+    flagged = models.BooleanField(default=False)
