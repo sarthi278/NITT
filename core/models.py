@@ -2,6 +2,7 @@ import uuid
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 
@@ -11,22 +12,31 @@ QUANTITY = {"max_digits": 16, "decimal_places": 3}
 
 class Item(models.Model):
     class ItemType(models.TextChoices):
-        RAW = "RAW", "Raw material"
-        PACKAGING = "PACKAGING", "Packaging"
-        FINISHED = "FINISHED", "Finished goods"
+        RAW = "RAW", "Raw Material"
+        PACKAGING = "PACKAGING", "Packaging Material"
+        FINISHED = "FINISHED", "Finished Goods"
 
     class BaseUnit(models.TextChoices):
-        GRAM = "g", "gram"
-        MILLILITRE = "ml", "millilitre"
-        PIECE = "piece", "piece"
+        GRAM = "g", "Gram (g)"
+        MILLILITRE = "ml", "Millilitre (ml)"
+        PIECE = "piece", "Piece"
 
     name = models.CharField(max_length=120)
     sku = models.CharField(max_length=40, unique=True)
     item_type = models.CharField(max_length=12, choices=ItemType.choices)
     base_unit = models.CharField(max_length=8, choices=BaseUnit.choices)
     hsn_code = models.CharField(max_length=20, blank=True)
-    gst_rate = models.DecimalField(default=Decimal("0"), **MONEY)
-    reorder_level = models.DecimalField(default=Decimal("0"), **QUANTITY)
+    gst_rate = models.DecimalField(
+        default=Decimal("0"),
+        validators=[MinValueValidator(Decimal("0")), MaxValueValidator(Decimal("100"))],
+        **MONEY,
+    )
+    reorder_level = models.DecimalField(
+        default=Decimal("0"),
+        validators=[MinValueValidator(Decimal("0"))],
+        **QUANTITY,
+    )
+    is_active = models.BooleanField(default=True)
 
     def __str__(self):
         return self.name
@@ -35,7 +45,10 @@ class Item(models.Model):
 class UnitConversion(models.Model):
     item = models.ForeignKey(Item, on_delete=models.CASCADE, related_name="conversions")
     unit = models.CharField(max_length=20)
-    to_base_multiplier = models.DecimalField(**QUANTITY)
+    to_base_multiplier = models.DecimalField(
+        validators=[MinValueValidator(Decimal("0.001"))],
+        **QUANTITY,
+    )
 
     class Meta:
         unique_together = ("item", "unit")

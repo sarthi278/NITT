@@ -96,3 +96,9 @@ Assumptions for stock inward:
 - A batch number is unique per item. Reusing an existing batch is allowed only when any supplied dates match its recorded dates.
 
 Apply the new schema with `python manage.py migrate` before running the application or deploying the feature.
+
+## Item management
+
+Admin, Owner, and Production users can create and edit items from the Stock page. Item creation saves the item and its unit conversions atomically and does not create stock movements. Search, item-type filtering, reorder levels, and low-stock status are shown in the stock list. Items are deactivated/reactivated rather than hard-deleted so movements and business history remain intact. An item's base unit cannot be changed after it has related stock or business records.
+
+The Item model has no description field, so the form does not add one. GST rate is treated as a percentage from 0 to 100; reorder level is expressed in the base unit.

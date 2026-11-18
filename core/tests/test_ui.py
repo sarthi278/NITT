@@ -24,7 +24,8 @@ class ResponsivePagesTests(TestCase):
     def test_stock_screen_uses_responsive_table(self):
         response = self.client.get("/stock/")
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Closing balance")
+        self.assertContains(response, "Current stock")
+        self.assertContains(response, "Add Item")
         self.assertContains(response, "table-responsive")
 
     def test_dashboard_only_shows_sales_tasks_for_salesman(self):

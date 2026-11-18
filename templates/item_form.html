@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}{% if item %}Edit item{% else %}Add item{% endif %} · Order-to-Audit{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1 class="page-title">{% if item %}Edit item{% else %}Add item{% endif %}</h1>
+    <p class="page-subtitle">Maintain item details and the units used to record its stock.</p>
+  </div>
+  <a class="btn btn-outline-secondary" href="{% url 'stock' %}">Back to stock</a>
+</div>
+{% if item_form.non_field_errors %}
+  <div class="alert alert-danger" role="alert">{{ item_form.non_field_errors }}</div>
+{% endif %}
+{% if conversion_formset.non_form_errors %}
+  <div class="alert alert-danger" role="alert">{{ conversion_formset.non_form_errors }}</div>
+{% endif %}
+<form method="post" id="itemForm">
+  {% csrf_token %}
+  <div class="card mb-3">
+    <div class="card-header"><h2 class="h6 mb-0">Basic information</h2></div>
+    <div class="card-body row g-3">
+      {% for field in item_form.visible_fields %}
+        <div class="col-12 col-md-6">
+          <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+          {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+          {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="card mb-3">
+    <div class="card-header d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2">
+      <div>
+        <h2 class="h6 mb-1">Unit conversions</h2>
+        <p class="small text-secondary mb-0">Multiplier is the number of base units in one selected unit.</p>
+      </div>
+      <button class="btn btn-outline-success" type="button" id="addConversion">Add conversion</button>
+    </div>
+    <div class="card-body">
+      {{ conversion_formset.management_form }}
+      <div id="conversionForms">
+        {% for conversion_form in conversion_formset %}
+          <div class="conversion-row border rounded-3 p-3 mb-3">
+            {% for hidden in conversion_form.hidden_fields %}{{ hidden }}{% endfor %}
+            {% if conversion_form.non_field_errors %}<div class="alert alert-danger py-2">{{ conversion_form.non_field_errors }}</div>{% endif %}
+            <div class="row g-3 align-items-end">
+              <div class="col-12 col-md-5">
+                <label class="form-label" for="{{ conversion_form.unit.id_for_label }}">{{ conversion_form.unit.label }}</label>
+                {{ conversion_form.unit }}
+                {% for error in conversion_form.unit.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+              </div>
+              <div class="col-12 col-md-5">
+                <label class="form-label" for="{{ conversion_form.to_base_multiplier.id_for_label }}">{{ conversion_form.to_base_multiplier.label }}</label>
+                {{ conversion_form.to_base_multiplier }}
+                {% for error in conversion_form.to_base_multiplier.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+              </div>
+              <div class="col-12 col-md-2">
+                <div class="form-check pb-2">
+                  {{ conversion_form.DELETE }}
+                  <label class="form-check-label" for="{{ conversion_form.DELETE.id_for_label }}">Remove</label>
+                </div>
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+      <template id="emptyConversionForm">
+        <div class="conversion-row border rounded-3 p-3 mb-3">
+          {% for hidden in conversion_formset.empty_form.hidden_fields %}{{ hidden }}{% endfor %}
+          <div class="row g-3 align-items-end">
+            <div class="col-12 col-md-5">
+              <label class="form-label" for="{{ conversion_formset.empty_form.unit.id_for_label }}">{{ conversion_formset.empty_form.unit.label }}</label>
+              {{ conversion_formset.empty_form.unit }}
+            </div>
+            <div class="col-12 col-md-5">
+              <label class="form-label" for="{{ conversion_formset.empty_form.to_base_multiplier.id_for_label }}">{{ conversion_formset.empty_form.to_base_multiplier.label }}</label>
+              {{ conversion_formset.empty_form.to_base_multiplier }}
+            </div>
+            <div class="col-12 col-md-2">
+              <div class="form-check pb-2">
+                {{ conversion_formset.empty_form.DELETE }}
+                <label class="form-check-label" for="{{ conversion_formset.empty_form.DELETE.id_for_label }}">Remove</label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+  <div class="d-flex flex-column flex-sm-row justify-content-end gap-2">
+    <a class="btn btn-outline-secondary" href="{% url 'stock' %}">Cancel</a>
+    <button class="btn btn-success" id="saveItem" type="submit">{% if item %}Save changes{% else %}Save item{% endif %}</button>
+  </div>
+</form>
+<script>
+  const conversionForms = document.getElementById("conversionForms");
+  const totalForms = document.getElementById("id_conversions-TOTAL_FORMS");
+  const emptyConversionForm = document.getElementById("emptyConversionForm");
+
+  document.getElementById("addConversion").addEventListener("click", () => {
+    const index = Number(totalForms.value);
+    const html = emptyConversionForm.innerHTML.replace(/__prefix__/g, index);
+    conversionForms.insertAdjacentHTML("beforeend", html);
+    totalForms.value = index + 1;
+  });
+
+  document.getElementById("itemForm").addEventListener("submit", () => {
+    const button = document.getElementById("saveItem");
+    button.disabled = true;
+    button.textContent = "Saving...";
+  });
+</script>
+{% endblock %}

@@ -1,7 +1,16 @@
 from django.contrib import admin
 from django.urls import path
 from core.views import health, home, login_view, logout_view, dashboard
-from core.views import purchase_view, production_view, stock_view, stock_inward_view, ledger_view
+from core.views import (
+    item_create_view,
+    item_edit_view,
+    item_toggle_active_view,
+    ledger_view,
+    production_view,
+    purchase_view,
+    stock_inward_view,
+    stock_view,
+)
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -13,6 +22,9 @@ urlpatterns = [
     path("production/", production_view, name="production"),
     path("stock/", stock_view, name="stock"),
     path("stock/inward/", stock_inward_view, name="stock_inward"),
+    path("items/add/", item_create_view, name="item_create"),
+    path("items/<int:item_id>/edit/", item_edit_view, name="item_edit"),
+    path("items/<int:item_id>/toggle-active/", item_toggle_active_view, name="item_toggle_active"),
     path("ledger/", ledger_view, name="ledger"),
     path("", home),
 ]

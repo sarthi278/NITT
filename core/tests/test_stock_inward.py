@@ -52,7 +52,7 @@ class StockInwardTests(TestCase):
         self.assertContains(response, "Item SKU")
         self.assertContains(response, "Item type")
         self.assertContains(response, '"kg"')
-        self.assertContains(response, "Raw material")
+        self.assertContains(response, "Raw Material")
 
     def test_repeated_submission_token_does_not_add_stock_twice(self):
         self.client.post(reverse("stock_inward"), self.payload)

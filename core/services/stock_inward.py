@@ -39,6 +39,8 @@ def post_stock_inward(
         return existing, False
 
     item = Item.objects.select_for_update().get(pk=item.pk)
+    if not item.is_active:
+        raise ValueError("This item is inactive and cannot receive stock.")
     quantity = to_item_base(display_quantity, item, unit)
     try:
         cost = Decimal(str(unit_cost))
