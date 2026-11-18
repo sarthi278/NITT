@@ -12,4 +12,4 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
-CMD ["sh", "-c", "python manage.py migrate && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT"]
+CMD ["sh", "-c", "python manage.py migrate && if [ \"$SEED_DEMO_USERS\" = \"1\" ]; then python manage.py seed_demo_users; fi && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT"]
