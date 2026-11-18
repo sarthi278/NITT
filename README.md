@@ -36,4 +36,18 @@ Django provides authentication, groups, migrations and admin in one framework, r
 
 ## Phase 0 status
 
-The Django skeleton, Docker Compose, health endpoint and pytest configuration are ready. Phase 1 will add migrations, role groups and seed data.
+The Django skeleton and Docker environment are ready.
+
+## Phase 1 status
+
+Run the benchmark seed:
+
+```powershell
+python manage.py migrate
+python manage.py seed_benchmark
+pytest -q
+```
+
+Test logins use password `demo123`: `sales-a`, `sales-b`, `admin`, `production`, `accountant`, `owner`.
+
+The seed creates Retailer A, Distributor B, Murukku 200 g, its BOM and benchmark opening balances. Inventory balances are not stored on Item; they are computed from append-only `StockMovement.qty_in - qty_out`.

@@ -6,4 +6,4 @@ def health(request):
 
 
 def home(request):
-    return JsonResponse({"name": "Order-to-Audit", "phase": 0})
+    return JsonResponse({"name": "Order-to-Audit", "phase": 1})
