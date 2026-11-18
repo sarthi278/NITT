@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}
+{% for item in items %}
+<div class="card"><h3>{{item.name}} — {{item.category}}</h3><p><b>Closing:</b> {{format_qty(ledgers[item.id]|sum(attribute='quantity_milli') if ledgers[item.id] else 0)}} {{item.uom}}</p>
+<table><tr><th>Date</th><th>Movement</th><th>Change</th><th>Source</th><th>Note</th></tr>
+{% for l in ledgers[item.id] %}<tr><td>{{l.created_at[:10]}}</td><td>{{l.movement_type}}</td><td>{{format_qty(l.quantity_milli)}}</td><td>{{l.source_type}} #{{l.source_id}}</td><td>{{l.note or ''}}</td></tr>{% endfor %}</table></div>
+{% endfor %}
+{% endblock %}

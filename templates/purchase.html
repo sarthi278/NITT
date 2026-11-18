@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card"><h2>Record purchase</h2>
+<form method="post">
+<label>Supplier</label><input name="supplier" value="Dummy Flour Supplier" required>
+<label>Raw / packaging item</label><select name="sku">{% for i in items %}<option value="{{i.sku}}">{{i.name}}</option>{% endfor %}</select>
+<label>Quantity</label><input name="quantity" type="number" step="0.001" value="60" required>
+<label>Rate ₹</label><input name="rate" type="number" step="0.01" value="45" required>
+<button>Post purchase</button></form></div>
+{% endblock %}

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card"><h2>New production run</h2>
+<form method="post">
+<input type="hidden" name="product_id" value="1">
+<label>Flour kg</label><input name="flour" type="number" step="0.001" value="40">
+<label>Cooking oil litres</label><input name="oil" type="number" step="0.001" value="10.5">
+<label>Spice mix kg</label><input name="spice" type="number" step="0.001" value="1.2">
+<label>Actual good packets</label><input name="actual_output" type="number" value="188">
+<label>Damaged pouches</label><input name="damaged_pouches" type="number" value="6">
+<label>Cartons used</label><input name="cartons" type="number" value="9">
+<label>Labour ₹</label><input name="labour" type="number" step="0.01" value="1200">
+<label>Gas/power ₹</label><input name="overhead" type="number" step="0.01" value="600">
+<button>Post production run</button></form></div>
+<div class="card"><h2>Production runs</h2><table><tr><th>Run</th><th>Product</th><th>Planned</th><th>Actual</th><th>Variance</th><th>Cost</th></tr>
+{% for r in runs %}<tr><td>{{r.run_number}}</td><td>{{r.product}}</td><td>200</td><td>{{r.actual_output}}</td>
+<td>{% if ((r.actual_output-r.planned_output)/r.planned_output*100)|abs > 3 %}<span class="warning">-6.00% flagged</span>{% else %}Within tolerance{% endif %}</td>
+<td><a href="{{url_for('cost',run_id=r.id)}}">View cost</a></td></tr>{% endfor %}</table></div>
+{% endblock %}

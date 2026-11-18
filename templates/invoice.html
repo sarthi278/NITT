@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card" id="invoice">
+<h2>GST TAX INVOICE</h2>
+<p><b>{{invoice.invoice_number}}</b> &nbsp; Date: {{invoice.invoice_date}}</p>
+<p>Customer: {{invoice.customer}}<br>Place of supply: {{invoice.state}}<br>GSTIN: {{invoice.gstin}}</p>
+<table><tr><th>Item</th><th>HSN</th><th>Qty</th><th>Rate</th><th>Taxable</th></tr>
+{% for l in lines %}<tr><td>{{l.name}}</td><td>{{l.hsn}}</td><td>{{l.quantity}}</td><td>{{format_money_paise(l.unit_price_paise)}}</td><td>{{format_money_paise(l.taxable_paise)}}</td></tr>{% endfor %}</table>
+<p>Taxable: {{format_money_paise(invoice.subtotal_paise)}}<br>
+CGST: {{format_money_paise(invoice.cgst_paise)}} &nbsp; SGST: {{format_money_paise(invoice.sgst_paise)}} &nbsp; IGST: {{format_money_paise(invoice.igst_paise)}}<br>
+<b>Invoice total: {{format_money_paise(invoice.total_paise)}}</b></p>
+<a class="button" href="{{url_for('invoice_pdf',invoice_id=invoice.id)}}">Download PDF</a>
+</div>
+{% endblock %}
