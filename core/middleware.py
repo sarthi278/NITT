@@ -1,0 +1,16 @@
+from core.audit_context import set_current_user, reset_current_user
+
+
+class AuditLogMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        token = set_current_user(
+            request.user if request.user.is_authenticated else None
+        )
+        try:
+            response = self.get_response(request)
+            return response
+        finally:
+            reset_current_user(token)
