@@ -1,9 +1,0 @@
-{% extends "base.html" %}
-{% block content %}
-<div class="card"><h2>Cost per packet — {{run.run_number}}</h2>
-<p>Valuation: weighted average for flour (opening 100 kg @ ₹42 + 60 kg purchase @ ₹45 = ₹43/kg); direct component rates use the BOM/purchase rate shown. Overheads: labour and gas/power allocated equally across good packets produced.</p>
-<table><tr><th>Component</th><th>Actual consumed</th></tr>{% for c in consumptions %}<tr><td>{{c.name}}</td><td>{{format_qty(c.actual_milli)}} {{c.uom}}</td></tr>{% endfor %}</table>
-<p><b>Run material + overhead cost:</b> {{format_money_paise(total_paise)}}</p>
-<p><b>Cost per good packet:</b> {{format_money_paise((cost_per_packet*100)|round(0)|int)}}</p>
-<p><b>Selling price:</b> ₹50.00 &nbsp; <b>Approximate margin:</b> {{format_money_paise(margin_paise)}}</p></div>
-{% endblock %}
