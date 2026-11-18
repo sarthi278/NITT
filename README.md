@@ -84,3 +84,15 @@ The seed creates Retailer A, Distributor B, Murukku 200 g, its BOM and benchmark
 ## Phase 2 status
 
 The production role can post flour purchases and benchmark runs from the responsive Bootstrap screens. Purchases and production post their stock movements inside database transactions. The stock summary and ledger screens are available to production, admin, owner and accountant roles. The mobile navigation collapses into a menu, tables scroll within their container on narrow screens, and dashboard actions are role-specific.
+
+## Stock inward
+
+Production, Admin, and Owner users can add stock from the Stock page. Each entry creates a persisted inward document and an `ADJUSTMENT` `StockMovement` in one transaction. The movement quantity is converted to the item's base unit using that item's `UnitConversion` records (the base unit is always available as a 1:1 option); balances continue to come only from the ledger. Repeated submissions carry a unique form token, so retrying the same submission cannot add stock twice.
+
+Assumptions for stock inward:
+
+- The unit cost is entered and recorded per selected display unit; the inward document retains that unit while the movement quantity is in base units.
+- Manufacturing or expiry dates require a batch number. Manufacturing cannot be after the entry date, expiry must be after manufacturing and on or after entry, and expired stock is rejected.
+- A batch number is unique per item. Reusing an existing batch is allowed only when any supplied dates match its recorded dates.
+
+Apply the new schema with `python manage.py migrate` before running the application or deploying the feature.

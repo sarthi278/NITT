@@ -1,4 +1,6 @@
+import uuid
 from decimal import Decimal
+
 from django.conf import settings
 from django.db import models
 
@@ -44,6 +46,32 @@ class StockBatch(models.Model):
     batch_no = models.CharField(max_length=80)
     mfg_date = models.DateField(null=True, blank=True)
     expiry_date = models.DateField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["item", "batch_no"],
+                name="unique_stock_batch_item_number",
+            ),
+        ]
+
+
+class StockInward(models.Model):
+    submission_key = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    item = models.ForeignKey(Item, on_delete=models.PROTECT, related_name="stock_inwards")
+    display_quantity = models.DecimalField(**QUANTITY)
+    base_quantity = models.DecimalField(**QUANTITY)
+    unit = models.CharField(max_length=20)
+    unit_cost = models.DecimalField(**MONEY)
+    batch = models.ForeignKey(StockBatch, null=True, blank=True, on_delete=models.PROTECT)
+    supplier = models.ForeignKey("Supplier", null=True, blank=True, on_delete=models.PROTECT)
+    entry_date = models.DateField()
+    remarks = models.TextField(blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-entry_date", "-id"]
 
 
 class StockMovement(models.Model):

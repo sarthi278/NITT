@@ -2,12 +2,26 @@ from django.http import JsonResponse
 from django.shortcuts import render, redirect
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required, user_passes_test
+from django.contrib import messages
+from django.db import IntegrityError
 from django.utils import timezone
 from django.db import connection
 from decimal import Decimal
+import uuid
 
-from core.models import Customer, Item, Product, ProductionRun, Purchase, Supplier, StockMovement
+from core.forms import StockInwardForm
+from core.models import (
+    Customer,
+    Item,
+    Product,
+    ProductionRun,
+    Purchase,
+    Supplier,
+    StockInward,
+    StockMovement,
+)
 from core.services.stock import balance
+from core.services.stock_inward import post_stock_inward
 from core.services.purchasing import post_purchase
 from core.services.production import post_production_run
 
@@ -140,7 +154,66 @@ def stock_view(request):
     items = []
     for item in Item.objects.all().order_by("item_type", "name"):
         items.append({"item": item, "balance": balance(item)})
-    return render(request, "stock.html", {"items": items})
+    can_add_stock = request.user.is_superuser or request.user.groups.filter(
+        name__in=["Production", "Admin", "Owner"]
+    ).exists()
+    return render(request, "stock.html", {"items": items, "can_add_stock": can_add_stock})
+
+
+@role_allowed("Production", "Admin", "Owner")
+def stock_inward_view(request):
+    items = list(Item.objects.prefetch_related("conversions").order_by("name"))
+    item_metadata = {}
+    for item in items:
+        units = [conversion.unit for conversion in item.conversions.all()]
+        if item.base_unit not in units:
+            units.append(item.base_unit)
+        item_metadata[item.pk] = {
+            "sku": item.sku,
+            "item_type": item.get_item_type_display(),
+            "units": units,
+        }
+
+    if request.method == "POST":
+        form = StockInwardForm(request.POST)
+        if form.is_valid():
+            data = form.cleaned_data
+            try:
+                inward, created = post_stock_inward(
+                    submission_key=data["submission_key"],
+                    item=data["item"],
+                    display_quantity=data["quantity"],
+                    unit=data["unit"],
+                    unit_cost=data["unit_cost"],
+                    entry_date=data["entry_date"],
+                    user=request.user,
+                    batch_no=data["batch_no"],
+                    manufacturing_date=data["manufacturing_date"],
+                    expiry_date=data["expiry_date"],
+                    supplier=data["supplier"],
+                    remarks=data["remarks"],
+                )
+            except IntegrityError:
+                inward = StockInward.objects.filter(
+                    submission_key=data["submission_key"]
+                ).first()
+                if inward is None:
+                    raise
+                created = False
+
+            if created:
+                messages.success(request, f"Stock entry #{inward.pk} was posted.")
+            else:
+                messages.info(request, "This stock submission was already processed.")
+            return redirect("stock")
+    else:
+        form = StockInwardForm(initial={"submission_key": uuid.uuid4()})
+
+    return render(
+        request,
+        "stock_inward.html",
+        {"form": form, "items": items, "item_metadata": item_metadata},
+    )
 
 
 @role_allowed("Production", "Admin", "Accountant", "Owner")

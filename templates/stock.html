@@ -6,7 +6,10 @@
     <h1 class="page-title">Stock summary</h1>
     <p class="page-subtitle">Current balances calculated from the stock movement ledger.</p>
   </div>
-  <a class="btn btn-outline-success" href="{% url 'ledger' %}">View stock ledger</a>
+  <div class="d-flex flex-column flex-sm-row gap-2 w-100 w-sm-auto">
+    {% if can_add_stock %}<a class="btn btn-success" href="{% url 'stock_inward' %}">Add Stock</a>{% endif %}
+    <a class="btn btn-outline-success" href="{% url 'ledger' %}">View stock ledger</a>
+  </div>
 </div>
 <div class="card">
   <div class="table-responsive border-0">

@@ -93,6 +93,11 @@
   </nav>
 </header>
 <main class="container page-shell py-4 py-md-5">
+  {% if messages %}
+    {% for message in messages %}
+      <div class="alert alert-{{ message.tags|default:'info' }}" role="status">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
   {% block content %}{% endblock %}
 </main>
 <footer class="container page-shell pb-4 site-footer">Order-to-Audit · Factory operations</footer>

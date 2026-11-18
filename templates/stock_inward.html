@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Add stock · Order-to-Audit{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1 class="page-title">Add stock</h1>
+    <p class="page-subtitle">Record an inward movement in the inventory ledger.</p>
+  </div>
+  <a class="btn btn-outline-secondary" href="{% url 'stock' %}">Back to stock</a>
+</div>
+{% if form.non_field_errors %}
+  <div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>
+{% endif %}
+<div class="card">
+  <div class="card-header"><h2 class="h6 mb-0">Stock entry details</h2></div>
+  <div class="card-body">
+    <form method="post" class="row g-3" id="stockInwardForm">
+      {% csrf_token %}
+      {{ form.submission_key }}
+      <div class="col-12 col-md-6">
+        <label class="form-label" for="{{ form.item.id_for_label }}">Item name</label>
+        {{ form.item }}
+        {{ form.item.errors }}
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label" for="itemSku">Item SKU</label>
+        <input class="form-control" id="itemSku" type="text" readonly>
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label" for="itemType">Item type</label>
+        <input class="form-control" id="itemType" type="text" readonly>
+      </div>
+      <div class="col-12 col-sm-6 col-lg-3">
+        <label class="form-label" for="{{ form.quantity.id_for_label }}">Quantity to add</label>
+        {{ form.quantity }}
+        {{ form.quantity.errors }}
+      </div>
+      <div class="col-12 col-sm-6 col-lg-3">
+        <label class="form-label" for="{{ form.unit.id_for_label }}">Unit</label>
+        <select class="form-select" id="{{ form.unit.id_for_label }}" name="{{ form.unit.html_name }}" data-selected="{{ form.unit.value|default_if_none:'' }}" required>
+          <option value="">Select unit</option>
+          {% if form.unit.value %}<option value="{{ form.unit.value }}" selected>{{ form.unit.value }}</option>{% endif %}
+        </select>
+        {{ form.unit.errors }}
+        <div class="form-text">The ledger stores the quantity in the item's base unit.</div>
+      </div>
+      <div class="col-12 col-sm-6 col-lg-3">
+        <label class="form-label" for="{{ form.unit_cost.id_for_label }}">Unit cost (per selected unit)</label>
+        {{ form.unit_cost }}
+        {{ form.unit_cost.errors }}
+      </div>
+      <div class="col-12 col-sm-6 col-lg-3">
+        <label class="form-label" for="{{ form.entry_date.id_for_label }}">Stock entry date</label>
+        {{ form.entry_date }}
+        {{ form.entry_date.errors }}
+      </div>
+      <div class="col-12 col-sm-6 col-lg-4">
+        <label class="form-label" for="{{ form.batch_no.id_for_label }}">Batch number <span class="text-secondary fw-normal">Optional</span></label>
+        {{ form.batch_no }}
+        {{ form.batch_no.errors }}
+      </div>
+      <div class="col-12 col-sm-6 col-lg-4">
+        <label class="form-label" for="{{ form.manufacturing_date.id_for_label }}">Manufacturing date <span class="text-secondary fw-normal">Optional</span></label>
+        {{ form.manufacturing_date }}
+        {{ form.manufacturing_date.errors }}
+      </div>
+      <div class="col-12 col-sm-6 col-lg-4">
+        <label class="form-label" for="{{ form.expiry_date.id_for_label }}">Expiry date <span class="text-secondary fw-normal">Optional</span></label>
+        {{ form.expiry_date }}
+        {{ form.expiry_date.errors }}
+      </div>
+      <div class="col-12 col-md-6">
+        <label class="form-label" for="{{ form.supplier.id_for_label }}">Supplier <span class="text-secondary fw-normal">Optional</span></label>
+        {{ form.supplier }}
+        {{ form.supplier.errors }}
+      </div>
+      <div class="col-12">
+        <label class="form-label" for="{{ form.remarks.id_for_label }}">Remarks</label>
+        {{ form.remarks }}
+        {{ form.remarks.errors }}
+      </div>
+      <div class="col-12 d-flex flex-column flex-sm-row justify-content-end gap-2 pt-2">
+        <a class="btn btn-outline-secondary" href="{% url 'stock' %}">Cancel</a>
+        <button class="btn btn-success" id="submitStock" type="submit">Submit stock</button>
+      </div>
+    </form>
+  </div>
+</div>
+{{ item_metadata|json_script:"stock-item-metadata" }}
+<script>
+  const itemMetadata = JSON.parse(document.getElementById("stock-item-metadata").textContent);
+  const itemSelect = document.getElementById("id_item");
+  const unitSelect = document.getElementById("id_unit");
+  const skuInput = document.getElementById("itemSku");
+  const typeInput = document.getElementById("itemType");
+
+  function updateItemDetails() {
+    const item = itemMetadata[itemSelect.value];
+    const selectedUnit = unitSelect.value || unitSelect.dataset.selected;
+    skuInput.value = item ? item.sku : "";
+    typeInput.value = item ? item.item_type : "";
+    unitSelect.replaceChildren(new Option("Select unit", ""));
+
+    if (item) {
+      item.units.forEach((unit) => {
+        unitSelect.add(new Option(unit, unit));
+      });
+    }
+
+    if (selectedUnit && Array.from(unitSelect.options).some((option) => option.value === selectedUnit)) {
+      unitSelect.value = selectedUnit;
+    }
+    unitSelect.disabled = !item || item.units.length === 0;
+  }
+
+  itemSelect.addEventListener("change", () => {
+    unitSelect.dataset.selected = "";
+    updateItemDetails();
+  });
+  updateItemDetails();
+
+  document.getElementById("stockInwardForm").addEventListener("submit", () => {
+    const button = document.getElementById("submitStock");
+    button.disabled = true;
+    button.textContent = "Submitting...";
+  });
+</script>
+{% endblock %}
