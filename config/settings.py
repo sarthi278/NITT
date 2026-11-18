@@ -4,7 +4,14 @@ import os
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "phase-0-development-secret")
 DEBUG = os.getenv("DJANGO_DEBUG", "1") == "1"
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "0.0.0.0", "testserver"]
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.getenv(
+        "DJANGO_ALLOWED_HOSTS",
+        "localhost,127.0.0.1,0.0.0.0,testserver",
+    ).split(",")
+    if host.strip()
+]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -39,6 +46,11 @@ WSGI_APPLICATION = "config.wsgi.application"
 DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": BASE_DIR / "db.sqlite3"}}
 
 if os.getenv("DATABASE_HOST"):
+    database_options = {}
+    ssl_mode = os.getenv("DATABASE_SSLMODE")
+    if ssl_mode:
+        database_options["sslmode"] = ssl_mode
+
     DATABASES["default"] = {
         "ENGINE": "django.db.backends.postgresql",
         "NAME": os.getenv("DATABASE_NAME", "order_audit"),
@@ -46,6 +58,7 @@ if os.getenv("DATABASE_HOST"):
         "PASSWORD": os.getenv("DATABASE_PASSWORD", "order_audit"),
         "HOST": os.getenv("DATABASE_HOST"),
         "PORT": os.getenv("DATABASE_PORT", "5432"),
+        "OPTIONS": database_options,
     }
 
 AUTH_PASSWORD_VALIDATORS = [{"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"}]

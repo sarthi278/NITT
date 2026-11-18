@@ -5,6 +5,7 @@ This repository follows the internship build in phases. Phases 0-2 establish the
 ## Run with Docker Compose
 
 ```powershell
+Copy-Item .env.example .env
 docker compose up --build
 ```
 
@@ -21,6 +22,26 @@ python manage.py runserver
 ```
 
 Without `DATABASE_HOST`, Django uses SQLite.
+
+### Configure hosted PostgreSQL
+
+Set these variables in the deployment platform's secret/environment-variable settings (do not commit `.env`):
+
+- `DATABASE_HOST`: hostname only, without `postgres://` or `https://`
+- `DATABASE_PORT`: provider's PostgreSQL port, usually `5432`
+- `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD`
+- `DATABASE_SSLMODE=require` if the provider requires TLS
+- `DJANGO_SECRET_KEY`: a private random value
+- `DJANGO_DEBUG=0`
+- `DJANGO_ALLOWED_HOSTS`: comma-separated deployed hostnames
+
+The app selects PostgreSQL when `DATABASE_HOST` is set. Run `python manage.py migrate` against that environment to create its schema. `python manage.py seed_benchmark` is optional and should only be used for a fresh demo database. This does not copy data from the local SQLite database.
+
+Verify a connection from the configured app environment with:
+
+```powershell
+python manage.py shell -c "from django.db import connection; connection.ensure_connection(); print(connection.vendor, connection.cursor().execute('SELECT 1').fetchone())"
+```
 
 ## Stack justification
 
