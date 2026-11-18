@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Owner dashboard · Order-to-Audit{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1 class="page-title">Owner dashboard</h1>
+    <p class="page-subtitle">Today's orders, inventory health, production alerts, and receivables.</p>
+  </div>
+  <a class="btn btn-outline-primary" href="{% url 'reports' %}">Open reports</a>
+</div>
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body"><div class="small text-secondary">Today's orders</div><div class="fs-3 fw-bold">{{ today_orders }}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body"><div class="small text-secondary">Low stock items</div><div class="fs-3 fw-bold">{{ low_stock_count }}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body"><div class="small text-secondary">Variance alerts today</div><div class="fs-3 fw-bold">{{ variance_alerts }}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body"><div class="small text-secondary">Outstanding dues</div><div class="fs-3 fw-bold">₹{{ outstanding_total }}</div></div></div></div>
+</div>
+<div class="row g-3">
+  <div class="col-12 col-xl-7">
+    <div class="card h-100">
+      <div class="card-header"><h2 class="h6 mb-0">Current stock</h2></div>
+      <div class="table-responsive border-0">
+        <table class="table">
+          <thead><tr><th>Item</th><th>Type</th><th>Current</th><th>Reorder</th><th>Status</th></tr></thead>
+          <tbody>
+          {% for row in stock_rows %}
+            <tr><td>{{ row.item.name }}</td><td>{{ row.item.get_item_type_display }}</td><td>{{ row.balance }} {{ row.item.base_unit }}</td><td>{{ row.item.reorder_level }}</td><td>{% if row.is_low %}<span class="badge text-bg-danger">Low</span>{% else %}<span class="badge text-bg-success">OK</span>{% endif %}</td></tr>
+          {% empty %}
+            <tr><td colspan="5" class="text-center text-secondary py-4">No active items.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-xl-5">
+    <div class="card h-100">
+      <div class="card-header"><h2 class="h6 mb-0">Latest production runs</h2></div>
+      <div class="table-responsive border-0">
+        <table class="table">
+          <thead><tr><th>Run</th><th>Product</th><th>Good output</th><th>Cost / packet</th></tr></thead>
+          <tbody>
+          {% for run in latest_runs %}
+            <tr><td>{{ run.number }}</td><td>{{ run.product.name }}</td><td>{{ run.actual_good_output }}</td><td>₹{{ run.cost_per_packet }}</td></tr>
+          {% empty %}
+            <tr><td colspan="4" class="text-center text-secondary py-4">No production runs yet.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

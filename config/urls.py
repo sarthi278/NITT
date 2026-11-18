@@ -1,11 +1,21 @@
 from django.contrib import admin
 from django.urls import path
-from core.views import health, home, login_view, logout_view, dashboard
+from core.views import health, home, login_view, logout_view, dashboard, service_worker
 from core.views import (
+    invoice_detail_view,
+    invoice_dispatch_view,
+    invoice_credit_note_view,
+    payments_view,
+    reports_view,
+    invoice_pdf_view,
     item_create_view,
     item_edit_view,
     item_toggle_active_view,
     ledger_view,
+    order_create_view,
+    order_invoice_view,
+    order_review_view,
+    sales_orders_view,
     production_view,
     purchase_view,
     stock_inward_view,
@@ -15,9 +25,20 @@ from core.views import (
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("health/", health),
+    path("service-worker.js", service_worker, name="service_worker"),
     path("login/", login_view, name="login"),
     path("logout/", logout_view, name="logout"),
     path("dashboard/", dashboard, name="dashboard"),
+    path("orders/", sales_orders_view, name="sales_orders"),
+    path("orders/new/", order_create_view, name="order_create"),
+    path("orders/<int:order_id>/review/", order_review_view, name="order_review"),
+    path("orders/<int:order_id>/invoice/", order_invoice_view, name="order_invoice"),
+    path("invoices/<int:invoice_id>/", invoice_detail_view, name="invoice_detail"),
+    path("invoices/<int:invoice_id>/pdf/", invoice_pdf_view, name="invoice_pdf"),
+    path("invoices/<int:invoice_id>/dispatch/", invoice_dispatch_view, name="invoice_dispatch"),
+    path("invoices/<int:invoice_id>/credit-note/", invoice_credit_note_view, name="invoice_credit_note"),
+    path("payments/", payments_view, name="payments"),
+    path("reports/", reports_view, name="reports"),
     path("purchase/", purchase_view, name="purchase"),
     path("production/", production_view, name="production"),
     path("stock/", stock_view, name="stock"),

@@ -7,11 +7,15 @@
   </div>
 </div>
 {% if role == "Salesman" %}
-<div class="card"><div class="card-body"><h2 class="h5">Sales order entry is coming next</h2><p class="text-secondary mb-0">Your account is ready. The mobile order workflow is part of the upcoming sales phase.</p></div></div>
+<div class="row g-3">
+  <div class="col-12 col-sm-6 col-lg-4"><a class="card h-100 text-decoration-none text-reset" href="{% url 'order_create' %}"><div class="card-body"><div class="text-success fw-bold mb-2">01 · Sales</div><h2 class="h5">Create an order</h2><p class="text-secondary mb-0">Submit a customer order from your assigned list.</p></div></a></div>
+  <div class="col-12 col-sm-6 col-lg-4"><a class="card h-100 text-decoration-none text-reset" href="{% url 'sales_orders' %}"><div class="card-body"><div class="text-success fw-bold mb-2">02 · Follow-up</div><h2 class="h5">My orders</h2><p class="text-secondary mb-0">Check submitted and invoiced orders.</p></div></a></div>
+</div>
 {% elif role == "Accountant" %}
 <div class="row g-3">
   <div class="col-12 col-sm-6 col-lg-3"><a class="card h-100 text-decoration-none text-reset" href="{% url 'stock' %}"><div class="card-body"><div class="text-success fw-bold mb-2">01 · Inventory</div><h2 class="h5">Check stock</h2><p class="text-secondary mb-0">Review current ledger balances.</p></div></a></div>
   <div class="col-12 col-sm-6 col-lg-3"><a class="card h-100 text-decoration-none text-reset" href="{% url 'ledger' %}"><div class="card-body"><div class="text-success fw-bold mb-2">02 · Traceability</div><h2 class="h5">View ledger</h2><p class="text-secondary mb-0">Trace stock to its source document.</p></div></a></div>
+  <div class="col-12 col-sm-6 col-lg-3"><a class="card h-100 text-decoration-none text-reset" href="{% url 'payments' %}"><div class="card-body"><div class="text-success fw-bold mb-2">03 · Finance</div><h2 class="h5">Collections</h2><p class="text-secondary mb-0">Review invoices and payments.</p></div></a></div>
 </div>
 {% else %}
 <div class="row g-3">

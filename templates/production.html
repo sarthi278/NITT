@@ -4,56 +4,108 @@
 <div class="page-heading">
   <div>
     <h1 class="page-title">Production</h1>
-    <p class="page-subtitle">Post actual material use and good output for a run.</p>
+    <p class="page-subtitle">Record BOM-based material use, wastage, output, and run costs.</p>
   </div>
 </div>
 {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
 {% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+
+<div class="card mb-4">
+  <div class="card-header"><h2 class="h6 mb-0">Select product</h2></div>
+  <div class="card-body">
+    <form method="get" class="row g-3 align-items-end">
+      <div class="col-12 col-md-8">
+        <label class="form-label" for="product-choice">Finished product</label>
+        <select class="form-select" id="product-choice" name="product" required>
+          {% for product in products %}
+          <option value="{{ product.pk }}" {% if selected_product.pk == product.pk %}selected{% endif %}>
+            {{ product.name }} · {{ product.sku }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-4">
+        <button class="btn btn-outline-primary w-100" type="submit">Load bill of materials</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if selected_product and not has_bom %}
+<div class="alert alert-warning" role="status">
+  No BOM lines are configured for {{ selected_product.name }}.
+</div>
+{% endif %}
+
+{% if selected_product and has_bom %}
 <div class="card mb-4">
   <div class="card-header"><h2 class="h6 mb-0">New production run</h2></div>
   <div class="card-body">
     <form method="post" class="row g-3">
       {% csrf_token %}
       <input type="hidden" name="number" value="{{ next_number|default:'RUN-0001' }}">
-      {% for p in products %}{% if forloop.first %}<input type="hidden" name="product" value="{{ p.id }}">{% endif %}{% endfor %}
-      <input type="hidden" name="batch_count" value="1">
-      <div class="col-12"><h3 class="h6 text-secondary mb-0">Actual consumption</h3></div>
-      <div class="col-6 col-lg-4">
-        <label class="form-label" for="flour">Flour <span class="text-secondary">(kg)</span></label>
-        <input class="form-control" id="flour" name="flour" type="number" min="0" step="0.001" value="40" required>
+      <input type="hidden" name="product" value="{{ selected_product.pk }}">
+
+      <div class="col-12 col-md-4">
+        <label class="form-label" for="batch_count">Number of batches</label>
+        <input class="form-control" id="batch_count" name="batch_count" type="number" min="0.001" step="0.001" value="1" required>
+        <div class="form-text">Expected output: {{ selected_product.bom.batch_yield_packets }} packets per batch.</div>
       </div>
-      <div class="col-6 col-lg-4">
-        <label class="form-label" for="oil">Cooking oil <span class="text-secondary">(L)</span></label>
-        <input class="form-control" id="oil" name="oil" type="number" min="0" step="0.001" value="10.500" required>
+      <div class="col-12">
+        <h3 class="h6 text-secondary mb-0">Actual consumption and wastage</h3>
+        <p class="small text-secondary mt-1 mb-0">
+          Enter actual quantity used in the BOM unit. Wastage is part of actual usage and is posted separately.
+        </p>
       </div>
-      <div class="col-6 col-lg-4">
-        <label class="form-label" for="spice">Spice mix <span class="text-secondary">(kg)</span></label>
-        <input class="form-control" id="spice" name="spice" type="number" min="0" step="0.001" value="1.200" required>
+      <div class="col-12">
+        <div class="table-responsive">
+          <table class="table align-middle">
+            <thead>
+              <tr><th>Material</th><th>Planned / batch</th><th>Actual used</th><th>Wastage</th></tr>
+            </thead>
+            <tbody>
+              {% for line in bom_lines %}
+              <tr>
+                <td>
+                  <span class="fw-semibold">{{ line.item.name }}</span>
+                  <span class="d-block small text-secondary">{{ line.item.sku }}</span>
+                </td>
+                <td>{{ line.qty_per_batch }} {{ line.unit }}</td>
+                <td>
+                  <label class="visually-hidden" for="actual_{{ line.pk }}">Actual {{ line.item.name }}</label>
+                  <div class="input-group">
+                    <input class="form-control" id="actual_{{ line.pk }}" name="actual_{{ line.pk }}"
+                           type="number" min="0" step="0.001" value="{{ line.qty_per_batch }}" required>
+                    <span class="input-group-text">{{ line.unit }}</span>
+                  </div>
+                </td>
+                <td>
+                  <label class="visually-hidden" for="wastage_{{ line.pk }}">Wastage {{ line.item.name }}</label>
+                  <div class="input-group">
+                    <input class="form-control" id="wastage_{{ line.pk }}" name="wastage_{{ line.pk }}"
+                           type="number" min="0" step="0.001" value="0">
+                    <span class="input-group-text">{{ line.unit }}</span>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
       </div>
-      <div class="col-6 col-lg-4">
-        <label class="form-label" for="pouches">Pouches consumed <span class="text-secondary">(including damage)</span></label>
-        <input class="form-control" id="pouches" name="pouches" type="number" min="0" step="1" value="194" required>
-      </div>
-      <div class="col-6 col-lg-4">
-        <label class="form-label" for="cartons">Cartons used</label>
-        <input class="form-control" id="cartons" name="cartons" type="number" min="0" step="1" value="9" required>
-      </div>
-      <div class="col-12"><hr class="my-1"><h3 class="h6 text-secondary mb-0">Output and run costs</h3></div>
-      <div class="col-6 col-lg-3">
+
+      <div class="col-12"><hr class="my-1"><h3 class="h6 text-secondary mb-0">Good output and run costs</h3></div>
+      <div class="col-12 col-md-4">
         <label class="form-label" for="actual_good_output">Good packets</label>
-        <input class="form-control" id="actual_good_output" name="actual_good_output" type="number" min="0" step="1" value="188" required>
+        <input class="form-control" id="actual_good_output" name="actual_good_output" type="number" min="1" step="1" value="{{ selected_product.bom.batch_yield_packets }}" required>
       </div>
-      <div class="col-6 col-lg-3">
-        <label class="form-label" for="damaged_pouches">Damaged pouches</label>
-        <input class="form-control" id="damaged_pouches" name="damaged_pouches" type="number" min="0" step="1" value="6" required>
-      </div>
-      <div class="col-6 col-lg-3">
+      <div class="col-6 col-md-4">
         <label class="form-label" for="labour_cost">Labour (₹)</label>
-        <input class="form-control" id="labour_cost" name="labour_cost" type="number" min="0" step="0.01" value="1200.00" required>
+        <input class="form-control" id="labour_cost" name="labour_cost" type="number" min="0" step="0.01" value="0.00" required>
       </div>
-      <div class="col-6 col-lg-3">
+      <div class="col-6 col-md-4">
         <label class="form-label" for="power_gas_cost">Gas / power (₹)</label>
-        <input class="form-control" id="power_gas_cost" name="power_gas_cost" type="number" min="0" step="0.01" value="600.00" required>
+        <input class="form-control" id="power_gas_cost" name="power_gas_cost" type="number" min="0" step="0.01" value="0.00" required>
       </div>
       <div class="col-12 d-flex justify-content-end pt-2">
         <button class="btn btn-success w-100 w-sm-auto" type="submit">Post production run</button>
@@ -61,6 +113,8 @@
     </form>
   </div>
 </div>
+{% endif %}
+
 <div class="card">
   <div class="card-header d-flex justify-content-between align-items-center">
     <h2 class="h6 mb-0">Recent production runs</h2>
@@ -68,12 +122,20 @@
   </div>
   <div class="table-responsive border-0">
     <table class="table">
-      <thead><tr><th>Run</th><th>Product</th><th>Expected</th><th>Good output</th><th>Wastage</th></tr></thead>
+      <thead><tr><th>Run</th><th>Product</th><th>Expected</th><th>Good output</th><th>Wastage</th><th>Cost / packet</th><th>Margin / packet</th></tr></thead>
       <tbody>
       {% for r in runs %}
-        <tr><td class="fw-semibold">{{ r.number }}</td><td>{{ r.product.name }}</td><td>{{ r.expected_output }}</td><td>{{ r.actual_good_output }}</td><td>{{ r.damaged_pouches }}</td></tr>
+        <tr>
+          <td class="fw-semibold">{{ r.number }}</td>
+          <td>{{ r.product.name }}</td>
+          <td>{{ r.expected_output }}</td>
+          <td>{{ r.actual_good_output }}</td>
+          <td>{{ r.damaged_pouches }}</td>
+          <td>₹{{ r.cost_per_packet }}</td>
+          <td>₹{{ r.margin_per_packet }}</td>
+        </tr>
       {% empty %}
-        <tr><td class="text-center text-secondary py-4" colspan="5">No production runs have been recorded.</td></tr>
+        <tr><td class="text-center text-secondary py-4" colspan="7">No production runs have been recorded.</td></tr>
       {% endfor %}
       </tbody>
     </table>

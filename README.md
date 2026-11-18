@@ -1,6 +1,6 @@
 # Order-to-Audit Prototype
 
-This repository follows the internship build in phases. Phases 0-2 establish the Django foundation, inventory ledger and production workflows.
+This repository is a working Django prototype for an order-to-audit workflow. It includes inventory and production, sales and invoicing, payments, reports, a role-aware dashboard, and a mobile order form with an offline outbox.
 
 ## Run with Docker Compose
 
@@ -57,15 +57,15 @@ Django provides authentication, groups, migrations and admin in one framework, r
 
 ## Engineering decisions
 
-- Money and quantities use Decimal fields: paise or 2 decimal places for money and 3 decimal places for quantities.
-- `StockMovement` will be append-only and ledger-derived balances will never be stored in an editable stock table.
-- `transaction.atomic()` and `select_for_update()` will protect stock-affecting services.
+- Money and quantities use Decimal fields: 2 decimal places for money and 3 decimal places for quantities.
+- `StockMovement` is append-only in business services; ledger-derived balances are never stored in an editable stock table.
+- `transaction.atomic()` and `select_for_update()` protect stock-affecting services.
 - All business rules are placed in `services/` modules.
-- Roles will use Django auth groups: Salesman, Admin, Production, Accountant, Owner.
+- Django auth groups provide Salesman, Admin, Production, Accountant, and Owner roles; views and querysets enforce access.
 
 ## Phase 0 status
 
-The Django skeleton and Docker environment are ready.
+The Django skeleton, Docker environment, and Mermaid data-model diagram are ready.
 
 ## Phase 1 status
 
@@ -83,7 +83,31 @@ The seed creates Retailer A, Distributor B, Murukku 200 g, its BOM and benchmark
 
 ## Phase 2 status
 
-The production role can post flour purchases and benchmark runs from the responsive Bootstrap screens. Purchases and production post their stock movements inside database transactions. The stock summary and ledger screens are available to production, admin, owner and accountant roles. The mobile navigation collapses into a menu, tables scroll within their container on narrow screens, and dashboard actions are role-specific.
+The production role can post purchases and BOM-driven production runs from responsive Bootstrap screens. The run form renders the selected product's BOM lines instead of assuming fixed material SKUs. Purchases and production post ledger movements inside database transactions, and production checks all required stock before writing any run data. The stock summary and ledger screens are available to production, admin, owner and accountant roles.
+
+### Production valuation and rounding
+
+Inventory valuation uses moving weighted average cost per base unit. Every new inward movement records its normalized `unit_cost_base`; each production consumption line is valued at the item's current weighted average, rounded to cents, and run overheads are added directly to that run. Cost per packet is total run cost divided by good output, rounded half-up to cents; margin uses that displayed cost per packet. For the benchmark run, this gives material cost ₹4,055, total cost ₹5,855, cost per packet ₹31.14, and margin ₹18.86 per packet.
+
+Quantities are converted from the BOM or purchase unit to the item's base unit through its `UnitConversion` records. A production run records normal issue and wastage as distinct movements, while its finished-goods movement includes only good output. A migration backfills known opening-stock and stock-inward rates; historical purchase rows do not retain their original display unit, so their pre-migration unit rates cannot be reliably normalized.
+
+## Orders, invoices, and collections
+
+Salesmen can submit orders only for customers assigned to them. A client UUID makes repeated online/offline submissions idempotent. Admin and Owner users review availability, reduce quantities for partial approval, hold lines at zero, or reject an order. Dispatch checks and locks finished stock again before posting outbound movements.
+
+Invoices use financial-year numbers such as `2026-27/0001`. Taxable values are rounded per line to paise; GST is then rounded on the invoice taxable total per GST rate, split between CGST/SGST for Tamil Nadu or recorded as IGST for other states. Where multiple lines share a rate, rounded tax cents are allocated to lines by largest remainder so line totals reconcile to the invoice total. Customer-specific prices override price-list prices, which override the product selling price.
+
+Payments are append-only and cannot exceed an invoice's outstanding balance. A full credit note is allowed only for an invoice with no recorded payments; a dispatched invoice's credit note posts reversal stock movements. Dispatch allocates dated batches by FEFO, skips expired lots, and consumes unbatched stock only after eligible lots. Admin and Owner can collect payments and approve orders; Accountant has read-only access to finance reports and collections.
+
+## Reports and dashboard
+
+Admin, Owner, and Accountant users can filter sales, customer/product sales, GST/B2B-B2C, HSN, purchases, stock, ledger, production variance, collections, and outstanding ageing reports by date. Reports export to CSV, Excel, and PDF; invoice PDFs are also available. The Owner dashboard shows today's orders, low-stock items, today's variance alerts, outstanding dues, recent run costs, and current stock.
+
+Audit logging records model changes with the acting user, field-level old/new values, and timestamp. Posted invoices are not deleted; full credit notes reverse invoice balances and, when already dispatched, restore stock through new ledger movements.
+
+## Known gaps
+
+The salesman order form queues submissions in IndexedDB and retries them through the service worker or the browser's online event; offline entry requires the form to have been loaded while online. Automatic refund tracking and push/email low-stock notifications are not implemented. Legacy purchase movements without their original display unit cannot be reconstructed into a reliable base-unit cost by the migration.
 
 ## Stock inward
 
@@ -102,3 +126,7 @@ Apply the new schema with `python manage.py migrate` before running the applicat
 Admin, Owner, and Production users can create and edit items from the Stock page. Item creation saves the item and its unit conversions atomically and does not create stock movements. Search, item-type filtering, reorder levels, and low-stock status are shown in the stock list. Items are deactivated/reactivated rather than hard-deleted so movements and business history remain intact. An item's base unit cannot be changed after it has related stock or business records.
 
 The Item model has no description field, so the form does not add one. GST rate is treated as a percentage from 0 to 100; reorder level is expressed in the base unit.
+
+## Demo
+
+Follow [DEMO_SCRIPT.md](./DEMO_SCRIPT.md) for a timed walkthrough of the benchmark workflow and the expected values to show.

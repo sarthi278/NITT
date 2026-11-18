@@ -34,21 +34,33 @@ def item_unit_multiplier(item, unit):
         return Decimal("1")
 
     conversion = UnitConversion.objects.filter(item=item, unit=unit).first()
-    if conversion is None or conversion.to_base_multiplier <= Decimal("0"):
+    if (
+        conversion is None
+        or not conversion.to_base_multiplier.is_finite()
+        or conversion.to_base_multiplier <= Decimal("0")
+    ):
         raise ValueError("Select a unit configured for this item")
     return conversion.to_base_multiplier
 
 
-def to_item_base(quantity, item, unit):
+def item_quantity_to_base(quantity, item, unit, *, allow_zero=False):
     try:
         amount = Decimal(str(quantity))
         multiplier = item_unit_multiplier(item, unit)
-        if not amount.is_finite() or amount <= Decimal("0"):
+        if not amount.is_finite() or amount < Decimal("0"):
+            raise ValueError("Quantity cannot be negative")
+        if amount == Decimal("0") and not allow_zero:
             raise ValueError("Quantity must be greater than zero")
         base_quantity = (amount * multiplier).quantize(Decimal("0.001"))
     except (InvalidOperation, TypeError):
         raise ValueError("Enter a valid quantity")
 
-    if base_quantity <= Decimal("0"):
+    if base_quantity < Decimal("0") or (
+        base_quantity == Decimal("0") and not allow_zero
+    ):
         raise ValueError("Converted quantity must be greater than zero")
     return base_quantity
+
+
+def to_item_base(quantity, item, unit):
+    return item_quantity_to_base(quantity, item, unit)

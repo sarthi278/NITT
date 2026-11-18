@@ -103,6 +103,7 @@ class StockMovement(models.Model):
     qty_in = models.DecimalField(default=Decimal("0"), **QUANTITY)
     qty_out = models.DecimalField(default=Decimal("0"), **QUANTITY)
     unit_cost = models.DecimalField(default=Decimal("0"), **MONEY)
+    unit_cost_base = models.DecimalField(max_digits=18, decimal_places=8, default=Decimal("0"))
     movement_type = models.CharField(max_length=20, choices=MovementType.choices)
     source_doc_type = models.CharField(max_length=30)
     source_doc_id = models.PositiveBigIntegerField()
@@ -127,6 +128,20 @@ class Customer(models.Model):
     customer_type = models.CharField(max_length=20, default="RETAIL")
     gstin = models.CharField(max_length=20, blank=True)
     state = models.CharField(max_length=80)
+    assigned_salesman = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="assigned_customers",
+    )
+    price_list = models.ForeignKey(
+        "PriceList",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="customers",
+    )
 
     def __str__(self):
         return self.name
@@ -135,12 +150,185 @@ class Customer(models.Model):
 class Product(models.Model):
     name = models.CharField(max_length=160)
     sku = models.CharField(max_length=40, unique=True)
+    finished_item = models.OneToOneField(
+        Item,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="finished_product",
+    )
     hsn_code = models.CharField(max_length=20)
-    gst_rate = models.DecimalField(default=Decimal("5"), **MONEY)
+    gst_rate = models.DecimalField(
+        default=Decimal("5"),
+        validators=[MinValueValidator(Decimal("0")), MaxValueValidator(Decimal("100"))],
+        **MONEY,
+    )
     selling_price = models.DecimalField(**MONEY)
 
     def __str__(self):
         return self.name
+
+
+class PriceList(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.name
+
+
+class PriceListItem(models.Model):
+    price_list = models.ForeignKey(PriceList, on_delete=models.CASCADE, related_name="items")
+    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    unit_price = models.DecimalField(**MONEY)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["price_list", "product"],
+                name="unique_product_price_per_list",
+            ),
+        ]
+
+
+class CustomerPrice(models.Model):
+    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="prices")
+    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    unit_price = models.DecimalField(**MONEY)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["customer", "product"],
+                name="unique_customer_product_price",
+            ),
+        ]
+
+
+class Order(models.Model):
+    class Status(models.TextChoices):
+        SUBMITTED = "SUBMITTED", "Submitted"
+        APPROVED = "APPROVED", "Approved"
+        REJECTED = "REJECTED", "Rejected"
+        INVOICED = "INVOICED", "Invoiced"
+        DISPATCHED = "DISPATCHED", "Dispatched"
+
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name="orders")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="sales_orders",
+    )
+    client_uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.SUBMITTED)
+    notes = models.TextField(blank=True)
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="approved_sales_orders",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-submitted_at", "-id"]
+
+
+class OrderLine(models.Model):
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="lines")
+    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    quantity = models.DecimalField(**QUANTITY)
+    approved_quantity = models.DecimalField(default=Decimal("0"), **QUANTITY)
+    unit_price = models.DecimalField(**MONEY)
+
+
+class InvoiceSequence(models.Model):
+    financial_year = models.CharField(max_length=7, unique=True)
+    last_number = models.PositiveIntegerField(default=0)
+
+
+class Invoice(models.Model):
+    class Status(models.TextChoices):
+        POSTED = "POSTED", "Posted"
+        CREDITED = "CREDITED", "Credited"
+
+    number = models.CharField(max_length=20, unique=True)
+    financial_year = models.CharField(max_length=7)
+    order = models.OneToOneField(Order, on_delete=models.PROTECT, related_name="invoice")
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name="invoices")
+    invoice_date = models.DateField()
+    customer_gstin = models.CharField(max_length=20, blank=True)
+    company_gstin = models.CharField(max_length=20, blank=True)
+    place_of_supply = models.CharField(max_length=80)
+    taxable_total = models.DecimalField(default=Decimal("0"), **MONEY)
+    cgst_total = models.DecimalField(default=Decimal("0"), **MONEY)
+    sgst_total = models.DecimalField(default=Decimal("0"), **MONEY)
+    igst_total = models.DecimalField(default=Decimal("0"), **MONEY)
+    total = models.DecimalField(default=Decimal("0"), **MONEY)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.POSTED)
+    posted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-invoice_date", "-id"]
+
+    def __str__(self):
+        return self.number
+
+
+class InvoiceLine(models.Model):
+    invoice = models.ForeignKey(Invoice, on_delete=models.PROTECT, related_name="lines")
+    order_line = models.ForeignKey(OrderLine, on_delete=models.PROTECT)
+    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    product_name = models.CharField(max_length=160)
+    hsn_code = models.CharField(max_length=20)
+    quantity = models.DecimalField(**QUANTITY)
+    unit_price = models.DecimalField(**MONEY)
+    taxable_value = models.DecimalField(**MONEY)
+    gst_rate = models.DecimalField(**MONEY)
+    cgst = models.DecimalField(default=Decimal("0"), **MONEY)
+    sgst = models.DecimalField(default=Decimal("0"), **MONEY)
+    igst = models.DecimalField(default=Decimal("0"), **MONEY)
+    total = models.DecimalField(**MONEY)
+
+
+class Dispatch(models.Model):
+    invoice = models.OneToOneField(Invoice, on_delete=models.PROTECT, related_name="dispatch")
+    dispatch_date = models.DateField()
+    dispatched_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class Payment(models.Model):
+    class Method(models.TextChoices):
+        CASH = "CASH", "Cash"
+        BANK = "BANK", "Bank transfer"
+        UPI = "UPI", "UPI"
+        CHEQUE = "CHEQUE", "Cheque"
+
+    invoice = models.ForeignKey(Invoice, on_delete=models.PROTECT, related_name="payments")
+    payment_date = models.DateField()
+    amount = models.DecimalField(**MONEY)
+    method = models.CharField(max_length=10, choices=Method.choices)
+    reference = models.CharField(max_length=100, blank=True)
+    received_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class CreditNote(models.Model):
+    number = models.CharField(max_length=20, unique=True)
+    invoice = models.OneToOneField(Invoice, on_delete=models.PROTECT, related_name="credit_note")
+    issue_date = models.DateField()
+    reason = models.CharField(max_length=255)
+    taxable_total = models.DecimalField(**MONEY)
+    cgst_total = models.DecimalField(**MONEY)
+    sgst_total = models.DecimalField(**MONEY)
+    igst_total = models.DecimalField(**MONEY)
+    total = models.DecimalField(**MONEY)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(auto_now_add=True)
 
 
 class ProductPackSize(models.Model):
@@ -192,18 +380,27 @@ class PurchaseLine(models.Model):
     item = models.ForeignKey(Item, on_delete=models.PROTECT)
     quantity = models.DecimalField(**QUANTITY)
     unit = models.CharField(max_length=20)
+    display_quantity = models.DecimalField(default=Decimal("0"), **QUANTITY)
+    display_unit = models.CharField(max_length=20, blank=True)
     unit_cost = models.DecimalField(**MONEY)
 
 
 class ProductionRun(models.Model):
     number = models.CharField(max_length=40, unique=True)
     product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    bom = models.ForeignKey("BOM", null=True, blank=True, on_delete=models.PROTECT, related_name="runs")
     batch_count = models.DecimalField(default=Decimal("1"), **QUANTITY)
     expected_output = models.PositiveIntegerField()
     actual_good_output = models.PositiveIntegerField()
     damaged_pouches = models.PositiveIntegerField(default=0)
     labour_cost = models.DecimalField(default=Decimal("0"), **MONEY)
     power_gas_cost = models.DecimalField(default=Decimal("0"), **MONEY)
+    material_cost = models.DecimalField(default=Decimal("0"), **MONEY)
+    overhead_cost = models.DecimalField(default=Decimal("0"), **MONEY)
+    total_cost = models.DecimalField(default=Decimal("0"), **MONEY)
+    cost_per_packet = models.DecimalField(default=Decimal("0"), **MONEY)
+    margin_per_packet = models.DecimalField(default=Decimal("0"), **MONEY)
+    margin_pct = models.DecimalField(default=Decimal("0"), **MONEY)
     run_date = models.DateField()
     posted = models.BooleanField(default=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
@@ -214,5 +411,7 @@ class ProductionConsumption(models.Model):
     item = models.ForeignKey(Item, on_delete=models.PROTECT)
     planned_qty = models.DecimalField(**QUANTITY)
     actual_qty = models.DecimalField(**QUANTITY)
+    wasted_qty = models.DecimalField(default=Decimal("0"), **QUANTITY)
     variance_pct = models.DecimalField(**QUANTITY)
+    material_cost = models.DecimalField(default=Decimal("0"), **MONEY)
     flagged = models.BooleanField(default=False)

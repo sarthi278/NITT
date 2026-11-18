@@ -1,4 +1,5 @@
 from django.contrib.auth.models import Group, User
+from django.core.management import call_command
 from django.test import TestCase
 
 
@@ -13,12 +14,21 @@ class ResponsivePagesTests(TestCase):
         response = self.client.get("/health/")
         self.assertEqual(response.json(), {"status": "ok", "database": "sqlite"})
 
+    def test_service_worker_is_served_with_root_scope(self):
+        response = self.client.get("/service-worker.js")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Service-Worker-Allowed"], "/")
+        self.assertContains(response, "sync-sales-orders")
+
     def test_production_screen_has_mobile_layout_and_labels(self):
+        call_command("seed_benchmark")
         response = self.client.get("/production/")
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'name="viewport"')
         self.assertContains(response, "Toggle navigation")
         self.assertContains(response, "Good packets")
+        self.assertContains(response, "Actual used")
+        self.assertContains(response, "Wastage")
         self.assertContains(response, "table-responsive")
 
     def test_stock_screen_uses_responsive_table(self):
@@ -36,5 +46,6 @@ class ResponsivePagesTests(TestCase):
         group.name = "Salesman"
         group.save()
         response = self.client.get("/dashboard/")
-        self.assertContains(response, "Sales order entry is coming next")
+        self.assertContains(response, "Create an order")
+        self.assertContains(response, "My orders")
         self.assertNotContains(response, "Receive stock")

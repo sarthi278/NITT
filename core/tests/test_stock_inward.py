@@ -41,6 +41,7 @@ class StockInwardTests(TestCase):
         movement = StockMovement.objects.get(source_doc_type="STOCK_INWARD")
         self.assertEqual(inward.base_quantity, Decimal("2000.000"))
         self.assertEqual(movement.qty_in, Decimal("2000.000"))
+        self.assertEqual(movement.unit_cost_base, Decimal("0.04500000"))
         self.assertEqual(movement.source_doc_id, inward.pk)
         self.assertEqual(movement.batch, inward.batch)
         self.assertEqual(balance(self.flour), Decimal("102000.000"))

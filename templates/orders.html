@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Sales orders · Order-to-Audit{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1 class="page-title">Sales orders</h1>
+    <p class="page-subtitle">Review submitted orders and follow their invoice status.</p>
+  </div>
+  {% if can_create_orders %}<a class="btn btn-success" href="{% url 'order_create' %}">New order</a>{% endif %}
+</div>
+<div class="card">
+  <div class="table-responsive border-0">
+    <table class="table">
+      <thead><tr><th>Order</th><th>Date</th><th>Customer</th><th>Salesman</th><th>Items</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>
+      {% for order in orders %}
+        <tr>
+          <td class="fw-semibold">#{{ order.pk }}</td>
+          <td>{{ order.submitted_at|date:"Y-m-d H:i" }}</td>
+          <td>{{ order.customer.name }}</td>
+          <td>{{ order.created_by.username }}</td>
+          <td>
+            {% for line in order.lines.all %}
+              <span class="d-block">{{ line.product.name }} · {{ line.quantity }} packets</span>
+            {% endfor %}
+          </td>
+          <td><span class="badge text-bg-light">{{ order.get_status_display }}</span></td>
+          <td class="text-nowrap">
+            {% if can_review_orders and order.status == "SUBMITTED" %}
+              <a class="btn btn-sm btn-outline-primary" href="{% url 'order_review' order.pk %}">Review</a>
+            {% endif %}
+            {% if can_review_orders and order.status == "APPROVED" %}
+              <form class="d-inline" method="post" action="{% url 'order_invoice' order.pk %}">
+                {% csrf_token %}
+                <button class="btn btn-sm btn-success" type="submit">Create invoice</button>
+              </form>
+            {% endif %}
+            {% if order.status == "INVOICED" or order.status == "DISPATCHED" %}
+              <a class="btn btn-sm btn-outline-primary" href="{% url 'invoice_detail' order.invoice.pk %}">Invoice</a>
+            {% endif %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td class="text-center text-secondary py-4" colspan="7">No sales orders have been submitted.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

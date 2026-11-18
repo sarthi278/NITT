@@ -1,0 +1,17 @@
+{
+  "name": "Order-to-Audit Sales",
+  "short_name": "NITT Sales",
+  "start_url": "/orders/new/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f3f6f4",
+  "theme_color": "#153d35",
+  "icons": [
+    {
+      "src": "/static/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -4,7 +4,7 @@ from django.db import IntegrityError, transaction
 
 from core.models import Item, StockBatch, StockInward, StockMovement
 from core.services.stock import create_movement
-from core.services.units import to_item_base
+from core.services.units import item_unit_multiplier, to_item_base
 
 
 def _validate_batch_dates(*, batch_no, entry_date, manufacturing_date, expiry_date):
@@ -48,6 +48,9 @@ def post_stock_inward(
         raise ValueError("Enter a valid unit cost")
     if not cost.is_finite() or cost < Decimal("0"):
         raise ValueError("Unit cost cannot be negative")
+    unit_cost_base = (
+        cost / item_unit_multiplier(item, unit)
+    ).quantize(Decimal("0.00000001"))
 
     batch_no = batch_no.strip()
     _validate_batch_dates(
@@ -104,6 +107,7 @@ def post_stock_inward(
         batch=batch,
         qty_in=quantity,
         unit_cost=cost,
+        unit_cost_base=unit_cost_base,
         movement_type=StockMovement.MovementType.ADJUSTMENT,
         source_doc_type="STOCK_INWARD",
         source_doc_id=inward.pk,

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}New sales order · Order-to-Audit{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1 class="page-title">New sales order</h1>
+    <p class="page-subtitle">Create an order for one of your assigned customers.</p>
+  </div>
+  <div id="order-sync-status" class="alert alert-info d-none" role="status" aria-live="polite"></div>
+  <a class="btn btn-outline-secondary" href="{% url 'sales_orders' %}">My orders</a>
+</div>
+{% if formset.non_form_errors %}
+  <div class="alert alert-danger" role="alert">{{ formset.non_form_errors }}</div>
+{% endif %}
+{% if not customers %}
+  <div class="alert alert-info" role="status">No customers are assigned to your account yet.</div>
+{% else %}
+<div class="card">
+  <div class="card-header"><h2 class="h6 mb-0">Order details</h2></div>
+  <div class="card-body">
+    <form method="post" class="row g-3">
+      {% csrf_token %}
+      <input type="hidden" name="client_uuid" value="{{ client_uuid }}">
+      <div class="col-12">
+        <label class="form-label" for="customer">Customer</label>
+        <select class="form-select" id="customer" name="customer" required>
+          <option value="">Select a customer</option>
+          {% for customer in customers %}
+          <option value="{{ customer.pk }}" {% if request.POST.customer == customer.pk|stringformat:"s" %}selected{% endif %}>
+            {{ customer.name }} · {{ customer.state }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      {{ formset.management_form }}
+      <div class="col-12">
+        <h2 class="h6 text-secondary">Products</h2>
+        <div class="table-responsive">
+          <table class="table align-middle">
+            <thead><tr><th>Product</th><th>Quantity (packets)</th></tr></thead>
+            <tbody>
+              {% for form in formset %}
+              <tr>
+                <td>
+                  {{ form.product }}
+                  {% for error in form.product.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                </td>
+                <td>
+                  {{ form.quantity }}
+                  {% for error in form.quantity.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <p class="form-text">The price list or customer-specific price is applied when this order is saved.</p>
+      </div>
+      <div class="col-12">
+        <label class="form-label" for="notes">Notes (optional)</label>
+        <textarea class="form-control" id="notes" name="notes" rows="3">{{ request.POST.notes }}</textarea>
+      </div>
+      <div class="col-12 d-flex justify-content-end">
+        <button class="btn btn-success w-100 w-sm-auto" type="submit">Submit order</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+<script src="{% static 'js/order-sync.js' %}" defer></script>
+{% endblock %}

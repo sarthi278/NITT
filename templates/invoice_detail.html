@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Invoice {{ invoice.number }} · Order-to-Audit{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1 class="page-title">Invoice {{ invoice.number }}</h1>
+    <p class="page-subtitle">{{ invoice.customer.name }} · {{ invoice.invoice_date }} · {{ invoice.get_status_display }}</p>
+  </div>
+  <a class="btn btn-outline-primary" href="{% url 'invoice_pdf' invoice.pk %}">Download PDF</a>
+  <div>
+  {% if can_dispatch and not has_dispatch and invoice.status == "POSTED" %}
+  <form method="post" action="{% url 'invoice_dispatch' invoice.pk %}">
+    {% csrf_token %}
+    <button class="btn btn-success" type="submit">Dispatch invoice</button>
+  </form>
+  {% elif has_dispatch %}
+  <span class="badge text-bg-success">Dispatched</span>
+  {% endif %}
+  </div>
+</div>
+<div class="row g-3 mb-4">
+  <div class="col-12 col-md-6">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h6">Customer and supply</h2>
+      <div>{{ invoice.customer.name }}</div>
+      <div class="text-secondary">{{ invoice.customer.state }}</div>
+      {% if invoice.customer_gstin %}<div class="small">GSTIN {{ invoice.customer_gstin }}</div>{% endif %}
+      <div class="small mt-2">Place of supply: {{ invoice.place_of_supply }}</div>
+      {% if invoice.company_gstin %}<div class="small">Supplier GSTIN {{ invoice.company_gstin }}</div>{% endif %}
+    </div></div>
+  </div>
+  <div class="col-12 col-md-6">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h6">Order totals</h2>
+      <div class="d-flex justify-content-between"><span>Taxable value</span><strong>₹{{ invoice.taxable_total }}</strong></div>
+      {% if invoice.igst_total %}
+      <div class="d-flex justify-content-between"><span>IGST</span><span>₹{{ invoice.igst_total }}</span></div>
+      {% else %}
+      <div class="d-flex justify-content-between"><span>CGST</span><span>₹{{ invoice.cgst_total }}</span></div>
+      <div class="d-flex justify-content-between"><span>SGST</span><span>₹{{ invoice.sgst_total }}</span></div>
+      {% endif %}
+      <hr>
+      <div class="d-flex justify-content-between fs-5"><span>Total</span><strong>₹{{ invoice.total }}</strong></div>
+      <div class="d-flex justify-content-between mt-2"><span>Outstanding</span><strong>₹{{ outstanding }}</strong></div>
+    </div></div>
+  </div>
+</div>
+<div class="card">
+  <div class="table-responsive border-0">
+    <table class="table">
+      <thead><tr><th>Product</th><th>HSN</th><th>Qty</th><th>Rate</th><th>Taxable</th><th>GST</th><th>Total</th></tr></thead>
+      <tbody>
+      {% for line in invoice.lines.all %}
+        <tr>
+          <td>{{ line.product_name }}</td><td>{{ line.hsn_code }}</td><td>{{ line.quantity }}</td>
+          <td>₹{{ line.unit_price }}</td><td>₹{{ line.taxable_value }}</td>
+          <td>{{ line.gst_rate }}%{% if line.igst %}<span class="d-block small">IGST ₹{{ line.igst }}</span>{% else %}<span class="d-block small">C/S ₹{{ line.cgst }}/₹{{ line.sgst }}</span>{% endif %}</td>
+          <td>₹{{ line.total }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7" class="text-center text-secondary py-4">This invoice has no lines.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% if can_credit and invoice.status == "POSTED" %}
+<div class="card mt-4">
+  <div class="card-header"><h2 class="h6 mb-0">Issue credit note</h2></div>
+  <div class="card-body">
+    {% if invoice.payments.all %}
+      <p class="text-secondary mb-0">This invoice has payments. Refund them before issuing a full credit note.</p>
+    {% else %}
+      <form method="post" action="{% url 'invoice_credit_note' invoice.pk %}" class="row g-3">
+        {% csrf_token %}
+        <div class="col-12 col-md-8">
+          <label class="form-label" for="credit-reason">Reason</label>
+          <input class="form-control" id="credit-reason" name="reason" maxlength="255" required>
+        </div>
+        <div class="col-12 col-md-4 d-flex align-items-end">
+          <button class="btn btn-outline-danger w-100" type="submit">Credit full invoice</button>
+        </div>
+      </form>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% if credit_note %}
+<div class="alert alert-warning mt-3" role="status">
+  Credited by {{ credit_note.number }} on {{ credit_note.issue_date }} — {{ credit_note.reason }}
+</div>
+{% endif %}
+{% if invoice.payments.all %}
+<div class="card mt-4">
+  <div class="card-header"><h2 class="h6 mb-0">Payments</h2></div>
+  <div class="table-responsive border-0">
+    <table class="table">
+      <thead><tr><th>Date</th><th>Method</th><th>Reference</th><th>Amount</th></tr></thead>
+      <tbody>{% for payment in invoice.payments.all %}<tr><td>{{ payment.payment_date }}</td><td>{{ payment.get_method_display }}</td><td>{{ payment.reference|default:"—" }}</td><td>₹{{ payment.amount }}</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

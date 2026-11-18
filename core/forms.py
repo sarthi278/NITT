@@ -2,17 +2,21 @@ from decimal import Decimal
 
 from django import forms
 from django.core.exceptions import ValidationError
-from django.forms import BaseInlineFormSet, inlineformset_factory
+from django.forms import BaseFormSet, BaseInlineFormSet, formset_factory, inlineformset_factory
 from django.utils import timezone
 
 from core.models import (
     BOMLine,
     Item,
+    Invoice,
+    Payment,
     ProductionConsumption,
+    Product,
     PurchaseLine,
     Supplier,
     UnitConversion,
 )
+from core.services.reports import REPORTS
 from core.services.units import to_item_base
 
 
@@ -139,6 +143,99 @@ ItemConversionFormSetFactory = inlineformset_factory(
     extra=1,
     can_delete=True,
 )
+
+
+class OrderLineForm(forms.Form):
+    product = forms.ModelChoiceField(queryset=Product.objects.none())
+    quantity = forms.DecimalField(
+        max_digits=16,
+        decimal_places=3,
+        min_value=Decimal("0.001"),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["product"].queryset = Product.objects.filter(
+            finished_item__is_active=True,
+        ).order_by("name")
+        self.fields["product"].label = "Product"
+        self.fields["quantity"].label = "Packets"
+        for field in self.fields.values():
+            field.widget.attrs["class"] = (
+                "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+            )
+
+
+class OrderLineFormSet(BaseFormSet):
+    def clean(self):
+        super().clean()
+        if any(self.errors):
+            return
+        if not any(
+            form.cleaned_data.get("product")
+            for form in self.forms
+            if form.cleaned_data
+        ):
+            raise ValidationError("Add at least one product to the order.")
+
+
+OrderLineFormSetFactory = formset_factory(
+    OrderLineForm,
+    formset=OrderLineFormSet,
+    extra=2,
+)
+
+
+class PaymentForm(forms.Form):
+    invoice = forms.ModelChoiceField(queryset=Invoice.objects.none())
+    payment_date = forms.DateField()
+    amount = forms.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        min_value=Decimal("0.01"),
+    )
+    method = forms.ChoiceField(choices=Payment.Method.choices)
+    reference = forms.CharField(max_length=100, required=False)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["invoice"].queryset = Invoice.objects.filter(
+            status=Invoice.Status.POSTED,
+        ).select_related("customer").order_by("invoice_date", "number")
+        self.fields["payment_date"].initial = timezone.localdate()
+        self.fields["payment_date"].widget = forms.DateInput(attrs={"type": "date"})
+        for field in self.fields.values():
+            field.widget.attrs["class"] = (
+                "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+            )
+
+
+class ReportFilterForm(forms.Form):
+    report = forms.ChoiceField(choices=REPORTS)
+    start_date = forms.DateField(required=False)
+    end_date = forms.DateField(required=False)
+    export = forms.ChoiceField(
+        choices=(("", "View report"), ("csv", "CSV"), ("xlsx", "Excel"), ("pdf", "PDF")),
+        required=False,
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["report"].initial = "sales"
+        self.fields["start_date"].widget = forms.DateInput(attrs={"type": "date"})
+        self.fields["end_date"].widget = forms.DateInput(attrs={"type": "date"})
+        for field in self.fields.values():
+            field.widget.attrs["class"] = (
+                "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+            )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        start_date = cleaned_data.get("start_date")
+        end_date = cleaned_data.get("end_date")
+        if start_date and end_date and start_date > end_date:
+            raise ValidationError("Start date must be on or before end date.")
+        return cleaned_data
 
 
 class StockInwardForm(forms.Form):
