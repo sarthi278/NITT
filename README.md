@@ -11,6 +11,14 @@ docker compose up --build
 
 Open `http://localhost:8000/`. Health endpoint: `http://localhost:8000/health/`.
 
+## Start from VS Code
+
+Press **Ctrl+Shift+B** to run the default build task. It starts PostgreSQL in a Docker Compose container and Django in a separate integrated terminal; Django serves both the HTML frontend and backend. No Node/frontend dependency install is needed. The task creates `.venv` and installs `requirements.txt` only when the environment is missing or the requirements have changed, then waits for PostgreSQL, runs migrations, and starts the server.
+
+Start Docker Desktop first. `.env` is read if present and is never created, changed, or printed by the startup scripts. Set `USE_SQLITE=1` in the environment to skip Docker and run the existing SQLite database. The default application and PostgreSQL host ports are 8000 and 5432; override them with `APP_PORT` and `POSTGRES_HOST_PORT`.
+
+If an older server already owns the application port but uses a different database backend, the task reports the mismatch rather than starting a duplicate. Stop that server and press Ctrl+Shift+B again.
+
 ## Run locally
 
 ```powershell

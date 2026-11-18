@@ -3,6 +3,7 @@ from django.shortcuts import render, redirect
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.utils import timezone
+from django.db import connection
 from decimal import Decimal
 
 from core.models import Customer, Item, Product, ProductionRun, Purchase, Supplier, StockMovement
@@ -12,7 +13,7 @@ from core.services.production import post_production_run
 
 
 def health(request):
-    return JsonResponse({"status": "ok"})
+    return JsonResponse({"status": "ok", "database": connection.vendor})
 
 
 def home(request):

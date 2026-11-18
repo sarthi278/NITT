@@ -9,6 +9,10 @@ class ResponsivePagesTests(TestCase):
         user.groups.add(group)
         self.client.login(username="floor-user", password="demo123")
 
+    def test_health_identifies_active_database_backend(self):
+        response = self.client.get("/health/")
+        self.assertEqual(response.json(), {"status": "ok", "database": "sqlite"})
+
     def test_production_screen_has_mobile_layout_and_labels(self):
         response = self.client.get("/production/")
         self.assertEqual(response.status_code, 200)
