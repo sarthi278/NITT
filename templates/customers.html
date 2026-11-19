@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Customers · Order-to-Audit{% endblock %}
+{% block content %}
+<div class="page-heading"><div><h1 class="page-title">Customers</h1><p class="page-subtitle">Manage GST details, sales assignments, and customer pricing.</p></div><a class="btn btn-success" href="{% url 'customer_create' %}">Add customer</a></div>
+<form method="get" class="card mb-3"><div class="card-body row g-3 align-items-end">
+  <div class="col-12 col-md-5"><label class="form-label" for="customerSearch">Search</label><input class="form-control" id="customerSearch" name="q" value="{{ search }}" placeholder="Name, GSTIN or address"></div>
+  <div class="col-6 col-md-3"><label class="form-label" for="customerState">State</label><input class="form-control" id="customerState" name="state" value="{{ state }}"></div>
+  <div class="col-6 col-md-2"><label class="form-label" for="customerType">Type</label><select class="form-select" id="customerType" name="customer_type"><option value="">All</option>{% for value,label in customer_types %}<option value="{{ value }}" {% if customer_type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <div class="col-12 col-md-2 d-flex gap-2"><button class="btn btn-outline-success flex-grow-1">Filter</button><a class="btn btn-outline-secondary" href="{% url 'customers' %}">Clear</a></div>
+</div></form>
+<div class="card"><div class="table-responsive border-0"><table class="table"><thead><tr><th>Name / GSTIN</th><th>Type</th><th>State</th><th>Salesman</th><th>Price list</th><th>Actions</th></tr></thead><tbody>
+{% for customer in customers %}<tr><td><strong>{{ customer.name }}</strong><div class="small text-secondary">{{ customer.gstin|default:"No GSTIN" }}</div></td><td>{{ customer.get_customer_type_display }}</td><td>{{ customer.state }}</td><td>{{ customer.assigned_salesman|default:"Unassigned" }}</td><td>{{ customer.price_list|default:"Default pricing" }}</td><td><a class="btn btn-sm btn-outline-success" href="{% url 'customer_edit' customer.pk %}">Edit</a></td></tr>
+{% empty %}<tr><td colspan="6" class="text-center text-secondary py-4">No customers match this search.</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% include "pagination.html" with page_obj=customers %}
+{% endblock %}

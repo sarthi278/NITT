@@ -4,6 +4,7 @@ import os
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "phase-0-development-secret")
 DEBUG = os.getenv("DJANGO_DEBUG", "0") == "1"
+DJANGO_ENV = os.getenv("DJANGO_ENV", "development").strip().lower()
 ALLOWED_HOSTS = [
     host.strip()
     for host in os.getenv(
@@ -79,15 +80,56 @@ LOGIN_REDIRECT_URL = "/"
 # Production security settings
 from django.core.exceptions import ImproperlyConfigured
 
-if not DEBUG and (not SECRET_KEY or SECRET_KEY == "phase-0-development-secret"):
-    raise ImproperlyConfigured("Set DJANGO_SECRET_KEY in production.")
-
 CSRF_TRUSTED_ORIGINS = [
     origin.strip()
     for origin in os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
     if origin.strip()
 ]
 
+if DJANGO_ENV == "production" and DEBUG:
+    raise ImproperlyConfigured("Set DJANGO_DEBUG=0 in production.")
+
+if not DEBUG:
+    development_secrets = {
+        "",
+        "phase-0-development-secret",
+        "local-only-change-me",
+        "change-me",
+    }
+    if SECRET_KEY in development_secrets:
+        raise ImproperlyConfigured(
+            "Set a private, non-development DJANGO_SECRET_KEY in production."
+        )
+    if not os.getenv("DATABASE_HOST"):
+        raise ImproperlyConfigured("Configure DATABASE_HOST for production PostgreSQL.")
+    if os.getenv("DATABASE_PASSWORD", "").strip().lower() in {
+        "",
+        "order_audit",
+        "local-dev-password",
+        "password",
+        "change-me",
+    }:
+        raise ImproperlyConfigured(
+            "Set a private, non-development DATABASE_PASSWORD in production."
+        )
+    if not os.getenv("DJANGO_ALLOWED_HOSTS", "").strip():
+        raise ImproperlyConfigured("Set DJANGO_ALLOWED_HOSTS in production.")
+    if not CSRF_TRUSTED_ORIGINS:
+        raise ImproperlyConfigured(
+            "Set HTTPS origins in DJANGO_CSRF_TRUSTED_ORIGINS for production."
+        )
+
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_HTTPONLY = True
+SECURE_SSL_REDIRECT = not DEBUG
+SECURE_HSTS_SECONDS = 31536000 if not DEBUG else 0
+SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
+SECURE_HSTS_PRELOAD = not DEBUG
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = "DENY"
+
+# Reset operations are allowed only on a separately named development database.
+BENCHMARK_DEMO_DATABASE = os.getenv("BENCHMARK_DEMO_DATABASE", "")
+BENCHMARK_RESET_ENABLED = os.getenv("BENCHMARK_RESET_ENABLED", "0") == "1"

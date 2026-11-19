@@ -4,6 +4,7 @@ from uuid import UUID
 from django.db import transaction
 from django.utils import timezone
 
+from core.audit import record_business_event
 from core.models import (
     Customer,
     CustomerPrice,
@@ -75,8 +76,14 @@ def create_order(*, customer, created_by, lines, client_uuid, notes=""):
             product = Product.objects.get(pk=submitted_line["product"].pk)
         except (KeyError, Product.DoesNotExist, AttributeError):
             raise ValueError("Select a valid product for every order line.")
-        if not product.finished_item_id or not product.finished_item.is_active:
+        if (
+            not product.is_active
+            or not product.finished_item_id
+            or not product.finished_item.is_active
+        ):
             raise ValueError(f"{product.name} is not available for sale.")
+        if not customer.is_active:
+            raise ValueError("This customer is inactive and cannot place orders.")
         quantity = _quantity(submitted_line.get("quantity"))
         unit_price = _price_for(customer, product)
         if not unit_price.is_finite() or unit_price < ZERO:
@@ -100,6 +107,15 @@ def create_order(*, customer, created_by, lines, client_uuid, notes=""):
         OrderLine(order=order, **line)
         for line in prepared_lines
     ])
+    record_business_event(
+        action="LINES_CREATED",
+        entity_type="Order",
+        entity_id=order.pk,
+        user=created_by,
+        source_doc_type="ORDER",
+        source_doc_id=order.pk,
+        details={"line_count": len(prepared_lines)},
+    )
     return order, True
 
 
@@ -160,6 +176,19 @@ def approve_order(*, order, approved_quantities, approved_by):
         accepted.append(line)
 
     OrderLine.objects.bulk_update(accepted, ["approved_quantity"])
+    record_business_event(
+        action="LINES_APPROVED",
+        entity_type="Order",
+        entity_id=order.pk,
+        user=approved_by,
+        source_doc_type="ORDER",
+        source_doc_id=order.pk,
+        details={
+            "approved_quantities": {
+                str(line.pk): line.approved_quantity for line in accepted
+            }
+        },
+    )
     if any(line.approved_quantity > ZERO for line in accepted):
         order.status = Order.Status.APPROVED
         order.approved_by = approved_by
@@ -175,4 +204,12 @@ def reject_order(*, order, rejected_by):
     order.status = Order.Status.REJECTED
     order.approved_by = rejected_by
     order.save(update_fields=["status", "approved_by", "updated_at"])
+    record_business_event(
+        action="REJECT",
+        entity_type="Order",
+        entity_id=order.pk,
+        user=rejected_by,
+        source_doc_type="ORDER",
+        source_doc_id=order.pk,
+    )
     return order

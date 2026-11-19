@@ -1,5 +1,5 @@
-from django.contrib import admin
 from django.urls import path
+from core.admin import admin_site
 from core.views import health, home, login_view, logout_view, dashboard, service_worker
 from core.views import (
     invoice_detail_view,
@@ -20,10 +20,23 @@ from core.views import (
     purchase_view,
     stock_inward_view,
     stock_view,
+    products_view,
+    product_create_view,
+    product_edit_view,
+    product_toggle_active_view,
+    customers_view,
+    customer_create_view,
+    customer_edit_view,
+    suppliers_view,
+    supplier_create_view,
+    supplier_edit_view,
+    price_lists_view,
+    price_list_create_view,
+    price_list_edit_view,
 )
 
 urlpatterns = [
-    path("admin/", admin.site.urls),
+    path("admin/", admin_site.urls),
     path("health/", health),
     path("service-worker.js", service_worker, name="service_worker"),
     path("login/", login_view, name="login"),
@@ -46,6 +59,19 @@ urlpatterns = [
     path("items/add/", item_create_view, name="item_create"),
     path("items/<int:item_id>/edit/", item_edit_view, name="item_edit"),
     path("items/<int:item_id>/toggle-active/", item_toggle_active_view, name="item_toggle_active"),
+    path("products/", products_view, name="products"),
+    path("products/add/", product_create_view, name="product_create"),
+    path("products/<int:product_id>/edit/", product_edit_view, name="product_edit"),
+    path("products/<int:product_id>/toggle-active/", product_toggle_active_view, name="product_toggle_active"),
+    path("customers/", customers_view, name="customers"),
+    path("customers/add/", customer_create_view, name="customer_create"),
+    path("customers/<int:customer_id>/edit/", customer_edit_view, name="customer_edit"),
+    path("suppliers/", suppliers_view, name="suppliers"),
+    path("suppliers/add/", supplier_create_view, name="supplier_create"),
+    path("suppliers/<int:supplier_id>/edit/", supplier_edit_view, name="supplier_edit"),
+    path("price-lists/", price_lists_view, name="price_lists"),
+    path("price-lists/add/", price_list_create_view, name="price_list_create"),
+    path("price-lists/<int:price_list_id>/edit/", price_list_edit_view, name="price_list_edit"),
     path("ledger/", ledger_view, name="ledger"),
     path("", home),
 ]

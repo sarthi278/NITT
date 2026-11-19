@@ -8,7 +8,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from core.models import Item, StockInward, StockMovement
+from core.models import AuditLog, Item, StockInward, StockMovement
 from core.services.stock import balance
 
 
@@ -45,6 +45,14 @@ class StockInwardTests(TestCase):
         self.assertEqual(movement.source_doc_id, inward.pk)
         self.assertEqual(movement.batch, inward.batch)
         self.assertEqual(balance(self.flour), Decimal("102000.000"))
+        self.assertTrue(AuditLog.objects.filter(
+            entity_type="StockInward",
+            entity_id=inward.pk,
+            action="ADJUSTMENT",
+            source_doc_type="STOCK_INWARD",
+            source_doc_id=inward.pk,
+            user=self.admin,
+        ).exists())
 
     def test_form_shows_item_metadata_and_configured_units(self):
         response = self.client.get(reverse("stock_inward"))

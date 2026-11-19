@@ -7,6 +7,7 @@ from django.core.management import call_command
 from django.test import TestCase
 
 from core.models import (
+    AuditLog,
     Customer,
     CustomerPrice,
     Invoice,
@@ -20,9 +21,9 @@ from core.models import (
     Supplier,
 )
 from core.services.credit_notes import issue_credit_note
-from core.services.dispatch import dispatch_invoice
+from core.services.dispatch import dispatch_invoice, remaining_dispatch_quantities
 from core.services.invoicing import create_invoice
-from core.services.orders import approve_order, create_order
+from core.services.orders import approve_order, create_order, reject_order
 from core.services.payments import invoice_outstanding, record_payment
 from core.services.production import post_production_run
 from core.services.purchasing import post_purchase
@@ -187,6 +188,114 @@ class OrderInvoiceDispatchTests(TestCase):
         self.assertFalse(duplicate_created)
         self.assertEqual(dispatch.pk, duplicate.pk)
 
+    def test_partial_dispatch_is_traceable_and_retry_safe(self):
+        order, _ = self.submit_order(self.retailer, self.sales_a, "10")
+        line = order.lines.get()
+        approve_order(
+            order=order,
+            approved_quantities={line.pk: Decimal("10")},
+            approved_by=self.admin,
+        )
+        invoice = create_invoice(
+            order=order,
+            posted_by=self.admin,
+            invoice_date=date(2026, 6, 1),
+        )
+        invoice_line = invoice.lines.get()
+        first_submission = uuid4()
+
+        self.client.force_login(self.admin)
+        detail = self.client.get(f"/invoices/{invoice.pk}/")
+        self.assertContains(detail, f'name="quantity_{invoice_line.pk}"')
+        response = self.client.post(
+            f"/invoices/{invoice.pk}/dispatch/",
+            {
+                "submission_key": str(first_submission),
+                f"quantity_{invoice_line.pk}": "4",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        first_dispatch = invoice.dispatches.get()
+        self.assertEqual(
+            first_dispatch.lines.get(invoice_line=invoice_line).quantity,
+            Decimal("4.000"),
+        )
+        self.assertEqual(remaining_dispatch_quantities(invoice)[invoice_line.pk], Decimal("6.000"))
+        self.assertEqual(balance(Item.objects.get(sku="FG-MURUKKU-200")), Decimal("46"))
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.INVOICED)
+
+        duplicate = self.client.post(
+            f"/invoices/{invoice.pk}/dispatch/",
+            {
+                "submission_key": str(first_submission),
+                f"quantity_{invoice_line.pk}": "4",
+            },
+        )
+        self.assertEqual(duplicate.status_code, 302)
+        self.assertEqual(invoice.dispatches.count(), 1)
+        self.assertEqual(balance(Item.objects.get(sku="FG-MURUKKU-200")), Decimal("46"))
+
+        second_response = self.client.post(
+            f"/invoices/{invoice.pk}/dispatch/",
+            {
+                "submission_key": str(uuid4()),
+                f"quantity_{invoice_line.pk}": "6",
+            },
+        )
+        self.assertEqual(second_response.status_code, 302)
+        self.assertEqual(invoice.dispatches.count(), 2)
+        self.assertEqual(remaining_dispatch_quantities(invoice)[invoice_line.pk], Decimal("0"))
+        self.assertEqual(balance(Item.objects.get(sku="FG-MURUKKU-200")), Decimal("40"))
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.DISPATCHED)
+
+    def test_approved_orders_reserve_stock_from_later_approvals(self):
+        first_order, _ = self.submit_order(self.retailer, self.sales_a, "40")
+        approve_order(
+            order=first_order,
+            approved_quantities={first_order.lines.get().pk: Decimal("40")},
+            approved_by=self.admin,
+        )
+        second_order, _ = self.submit_order(self.retailer, self.sales_a, "20")
+
+        with self.assertRaisesMessage(ValueError, "short by 10.000 packets"):
+            approve_order(
+                order=second_order,
+                approved_quantities={second_order.lines.get().pk: Decimal("20")},
+                approved_by=self.admin,
+            )
+        second_order.refresh_from_db()
+        self.assertEqual(second_order.status, Order.Status.SUBMITTED)
+
+    def test_crediting_unshipped_invoice_releases_reserved_stock(self):
+        order, _ = self.submit_order(self.retailer, self.sales_a, "40")
+        approve_order(
+            order=order,
+            approved_quantities={order.lines.get().pk: Decimal("40")},
+            approved_by=self.admin,
+        )
+        invoice = create_invoice(
+            order=order,
+            posted_by=self.admin,
+            invoice_date=date(2026, 6, 1),
+        )
+        issue_credit_note(
+            invoice=invoice,
+            issue_date=date(2026, 6, 2),
+            reason="Order cancelled before dispatch",
+            created_by=self.admin,
+        )
+        second_order, _ = self.submit_order(self.retailer, self.sales_a, "20")
+
+        approved = approve_order(
+            order=second_order,
+            approved_quantities={second_order.lines.get().pk: Decimal("20")},
+            approved_by=self.admin,
+        )
+
+        self.assertEqual(approved.status, Order.Status.APPROVED)
+
     def test_interstate_shortage_can_be_partially_approved_and_taxed(self):
         self.build_benchmark_stock()
         first_order, _ = self.submit_order(self.retailer, self.sales_a, "150")
@@ -315,10 +424,20 @@ class OrderInvoiceDispatchTests(TestCase):
             posted_by=self.admin,
             invoice_date=date(2026, 6, 1),
         )
+        invoice_line = invoice.lines.get()
         dispatch_invoice(
             invoice=invoice,
             dispatched_by=self.admin,
             dispatch_date=date(2026, 6, 1),
+            dispatch_quantities={invoice_line.pk: Decimal("60")},
+            submission_key=uuid4(),
+        )
+        dispatch_invoice(
+            invoice=invoice,
+            dispatched_by=self.admin,
+            dispatch_date=date(2026, 6, 1),
+            dispatch_quantities={invoice_line.pk: Decimal("90")},
+            submission_key=uuid4(),
         )
         credit_note = issue_credit_note(
             invoice=invoice,
@@ -336,6 +455,28 @@ class OrderInvoiceDispatchTests(TestCase):
             source_doc_id=credit_note.pk,
         )
         self.assertEqual(reversal.qty_in, Decimal("150"))
+        self.assertTrue(AuditLog.objects.filter(
+            entity_type="CreditNote",
+            entity_id=credit_note.pk,
+            action="ISSUE",
+            source_doc_type="INVOICE",
+            source_doc_id=invoice.pk,
+            user=self.admin,
+        ).exists())
+
+    def test_order_rejection_is_audited(self):
+        order, _ = self.submit_order(self.retailer, self.sales_a, "10")
+
+        reject_order(order=order, rejected_by=self.admin)
+
+        self.assertTrue(AuditLog.objects.filter(
+            entity_type="Order",
+            entity_id=order.pk,
+            action="REJECT",
+            source_doc_type="ORDER",
+            source_doc_id=order.pk,
+            user=self.admin,
+        ).exists())
 
     def test_dispatch_uses_first_expiring_unexpired_batch(self):
         finished_item = Item.objects.get(sku="FG-MURUKKU-200")

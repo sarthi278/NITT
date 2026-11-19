@@ -4,10 +4,22 @@ from decimal import Decimal
 from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from core.validators import validate_gstin
 
 
 MONEY = {"max_digits": 12, "decimal_places": 2}
 QUANTITY = {"max_digits": 16, "decimal_places": 3}
+
+
+class ImmutableQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValueError("Append-only records cannot be updated.")
+
+    def delete(self):
+        raise ValueError("Append-only records cannot be deleted.")
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        raise ValueError("Append-only records cannot be updated.")
 
 
 class Item(models.Model):
@@ -113,21 +125,48 @@ class StockMovement(models.Model):
     class Meta:
         ordering = ["timestamp", "id"]
 
+    objects = ImmutableQuerySet.as_manager()
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValueError("Stock movements are immutable; post a reversal or adjustment.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("Stock movements cannot be deleted.")
+
 
 class Supplier(models.Model):
     name = models.CharField(max_length=160)
-    gstin = models.CharField(max_length=20, blank=True)
+    gstin = models.CharField(max_length=20, blank=True, validators=[validate_gstin])
     state = models.CharField(max_length=80, blank=True)
+    address = models.TextField(blank=True)
+    phone = models.CharField(max_length=30, blank=True)
+    email = models.EmailField(blank=True)
+    is_active = models.BooleanField(default=True)
 
     def __str__(self):
         return self.name
 
 
 class Customer(models.Model):
+    class CustomerType(models.TextChoices):
+        RETAIL = "RETAIL", "Retail"
+        DISTRIBUTOR = "DISTRIBUTOR", "Distributor"
+        WHOLESALE = "WHOLESALE", "Wholesale"
+
     name = models.CharField(max_length=160)
-    customer_type = models.CharField(max_length=20, default="RETAIL")
-    gstin = models.CharField(max_length=20, blank=True)
+    customer_type = models.CharField(
+        max_length=20,
+        choices=CustomerType.choices,
+        default=CustomerType.RETAIL,
+    )
+    gstin = models.CharField(max_length=20, blank=True, validators=[validate_gstin])
     state = models.CharField(max_length=80)
+    address = models.TextField(blank=True)
+    phone = models.CharField(max_length=30, blank=True)
+    email = models.EmailField(blank=True)
+    is_active = models.BooleanField(default=True)
     assigned_salesman = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
@@ -164,6 +203,7 @@ class Product(models.Model):
         **MONEY,
     )
     selling_price = models.DecimalField(**MONEY)
+    is_active = models.BooleanField(default=True)
 
     def __str__(self):
         return self.name
@@ -261,6 +301,11 @@ class Invoice(models.Model):
     invoice_date = models.DateField()
     customer_gstin = models.CharField(max_length=20, blank=True)
     company_gstin = models.CharField(max_length=20, blank=True)
+    company_name = models.CharField(max_length=160, blank=True)
+    company_address = models.TextField(blank=True)
+    company_state = models.CharField(max_length=80, blank=True)
+    company_phone = models.CharField(max_length=30, blank=True)
+    company_email = models.EmailField(blank=True)
     place_of_supply = models.CharField(max_length=80)
     taxable_total = models.DecimalField(default=Decimal("0"), **MONEY)
     cgst_total = models.DecimalField(default=Decimal("0"), **MONEY)
@@ -295,10 +340,29 @@ class InvoiceLine(models.Model):
 
 
 class Dispatch(models.Model):
-    invoice = models.OneToOneField(Invoice, on_delete=models.PROTECT, related_name="dispatch")
+    invoice = models.ForeignKey(Invoice, on_delete=models.PROTECT, related_name="dispatches")
+    submission_key = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     dispatch_date = models.DateField()
     dispatched_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class DispatchLine(models.Model):
+    dispatch = models.ForeignKey(Dispatch, on_delete=models.PROTECT, related_name="lines")
+    invoice_line = models.ForeignKey(
+        InvoiceLine,
+        on_delete=models.PROTECT,
+        related_name="dispatch_lines",
+    )
+    quantity = models.DecimalField(**QUANTITY)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["dispatch", "invoice_line"],
+                name="unique_invoice_line_per_dispatch",
+            ),
+        ]
 
 
 class Payment(models.Model):
@@ -350,10 +414,38 @@ class BOMLine(models.Model):
     unit = models.CharField(max_length=20)
 
 
+class BOMTemplate(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+    batch_yield_packets = models.PositiveIntegerField(default=200)
+    tolerance_pct = models.DecimalField(default=Decimal("3"), **QUANTITY)
+    lines = models.ManyToManyField(Item, through="BOMTemplateLine", related_name="bom_templates")
+
+    def __str__(self):
+        return self.name
+
+
+class BOMTemplateLine(models.Model):
+    template = models.ForeignKey(BOMTemplate, on_delete=models.CASCADE, related_name="components")
+    item = models.ForeignKey(Item, on_delete=models.PROTECT)
+    qty_per_batch = models.DecimalField(**QUANTITY)
+    unit = models.CharField(max_length=20)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["template", "item"],
+                name="unique_item_per_bom_template",
+            ),
+        ]
+
+
 class CompanySettings(models.Model):
     name = models.CharField(max_length=160, default="NIT Demo Snacks")
-    gstin = models.CharField(max_length=20, blank=True)
+    address = models.TextField(blank=True)
+    gstin = models.CharField(max_length=20, blank=True, validators=[validate_gstin])
     state = models.CharField(max_length=80, default="Tamil Nadu")
+    phone = models.CharField(max_length=30, blank=True)
+    email = models.EmailField(blank=True)
     fy_start_month = models.PositiveSmallIntegerField(default=4)
 
 
@@ -366,6 +458,18 @@ class AuditLog(models.Model):
     old_value = models.TextField(blank=True)
     new_value = models.TextField(blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)
+    source_doc_type = models.CharField(max_length=30, blank=True)
+    source_doc_id = models.PositiveBigIntegerField(null=True, blank=True)
+
+    objects = ImmutableQuerySet.as_manager()
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValueError("Audit log records are immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("Audit log records cannot be deleted.")
 
 
 class Purchase(models.Model):

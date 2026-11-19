@@ -3,9 +3,9 @@
 ## Before recording
 
 1. Start the application with `docker compose up --build` or the VS Code **Ctrl+Shift+B** task.
-2. In a fresh demo database, run `python manage.py migrate` and `python manage.py seed_benchmark`.
+2. In a fresh demo database, run `python manage.py migrate` and `python manage.py seed_benchmark`. For a repeatable replay on the local Compose database, explicitly configure the demo reset settings and run `python manage.py reset_benchmark --confirm`.
 3. Sign in with `admin` for setup/review and `sales-a` / `sales-b` for the two order submissions. Seeded demo accounts use `demo123`.
-4. Keep the Stock, Production, Orders, Invoices, Payments, and Reports pages ready in separate browser tabs.
+4. Django Admin accepts only Admin/Owner staff accounts; StockMovement and AuditLog are read-only there. Keep Products & BOM, Customers, Stock, Production, Orders, Invoices, Payments, and Reports ready in separate browser tabs.
 
 ## Walkthrough
 
@@ -14,6 +14,7 @@
 **Say:** “This prototype connects purchasing and production to sales and audit. Django serves the mobile-friendly pages and API actions; PostgreSQL is the deployment database, and SQLite is available for local development.”
 
 Show the Stock page and explain that current quantities are calculated from `StockMovement`, rather than kept in a separately editable balance.
+Optionally open Products & BOM to compare the reusable Murukku 200 g (200 packets) and 500 g (80 packets) templates and their variant-specific packaging.
 
 ### 0:45-1:35 — Inventory and purchase
 
@@ -49,9 +50,9 @@ Record a ₹4,000 payment against Retailer A's ₹7,875 invoice.
 
 **Expected outstanding:** ₹3,875. Show the production run's ₹5,855 total cost, ₹31.14 cost per good packet, and ₹18.86 margin at ₹50 selling price. This uses moving weighted-average material valuation and includes the run overheads.
 
-### 6:20-7:20 — Reports and audit
+### 6:20-7:20 — Reports, company settings, and audit
 
-Show the GST/HSN report, stock ledger, production variance report, and outstanding-ageing report. Export one report to CSV or Excel, then show the invoice PDF and audit history.
+Show the GST/HSN report, stock ledger, production variance report, and outstanding-ageing report. Export one report to CSV or Excel, then show the invoice PDF with configured company name/address/GSTIN/contact, the amount in words, and audit history.
 
 Explain that posted movements remain in the ledger; corrections use reversals rather than editing history.
 
@@ -59,4 +60,4 @@ Explain that posted movements remain in the ledger; corrections use reversals ra
 
 Resize to a phone-width viewport and show the salesman order form. Explain that the IndexedDB outbox retries queued submissions when connectivity returns and uses a client UUID to avoid duplicate orders.
 
-**Close:** “The prototype demonstrates the stock-to-cash path. Offline entry requires the form to have been loaded while online; automated refunds and push/email low-stock notifications are not implemented.”
+**Close:** “The prototype demonstrates the stock-to-cash path. Benchmark reset is explicitly limited to a configured local demo database. Offline entry requires the form to have been loaded while online; automated refunds and push/email low-stock notifications are not implemented.”

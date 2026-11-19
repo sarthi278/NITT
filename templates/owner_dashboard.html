@@ -10,14 +10,53 @@
 </div>
 <div class="row g-3 mb-4">
   <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body"><div class="small text-secondary">Today's orders</div><div class="fs-3 fw-bold">{{ today_orders }}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body"><div class="small text-secondary">Pending orders</div><div class="fs-3 fw-bold">{{ pending_orders }}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body"><div class="small text-secondary">Today's taxable sales</div><div class="fs-3 fw-bold">₹{{ today_sales }}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body"><div class="small text-secondary">Monthly taxable revenue</div><div class="fs-3 fw-bold">₹{{ monthly_revenue }}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body"><div class="small text-secondary">Good packets today</div><div class="fs-3 fw-bold">{{ today_production }}</div></div></div></div>
   <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body"><div class="small text-secondary">Low stock items</div><div class="fs-3 fw-bold">{{ low_stock_count }}</div></div></div></div>
   <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body"><div class="small text-secondary">Variance alerts today</div><div class="fs-3 fw-bold">{{ variance_alerts }}</div></div></div></div>
   <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body"><div class="small text-secondary">Outstanding dues</div><div class="fs-3 fw-bold">₹{{ outstanding_total }}</div></div></div></div>
 </div>
 <div class="row g-3">
+  <div class="col-12 col-xl-6">
+    <div class="card h-100">
+      <div class="card-header"><h2 class="h6 mb-0">Taxable sales · last six months</h2></div>
+      <div class="card-body">
+        {% for point in monthly_sales %}
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <span class="small text-secondary" style="width: 4.5rem">{{ point.label }}</span>
+            <div class="progress flex-grow-1" role="img" aria-label="{{ point.label }} taxable sales ₹{{ point.amount }}">
+              <div class="progress-bar bg-success" style="width: {{ point.bar_pct }}%"></div>
+            </div>
+            <span class="small text-end" style="min-width: 5rem">₹{{ point.amount }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-xl-6">
+    <div class="card h-100">
+      <div class="card-header"><h2 class="h6 mb-0">Good production · last six months</h2></div>
+      <div class="card-body">
+        {% for point in monthly_production %}
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <span class="small text-secondary" style="width: 4.5rem">{{ point.label }}</span>
+            <div class="progress flex-grow-1" role="img" aria-label="{{ point.label }} good production {{ point.amount }} packets">
+              <div class="progress-bar bg-primary" style="width: {{ point.bar_pct }}%"></div>
+            </div>
+            <span class="small text-end" style="min-width: 5rem">{{ point.amount }} pkts</span>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
   <div class="col-12 col-xl-7">
     <div class="card h-100">
-      <div class="card-header"><h2 class="h6 mb-0">Current stock</h2></div>
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h2 class="h6 mb-0">Current stock</h2>
+        <span class="small text-secondary">{{ low_stock_count }} low-stock items</span>
+      </div>
       <div class="table-responsive border-0">
         <table class="table">
           <thead><tr><th>Item</th><th>Type</th><th>Current</th><th>Reorder</th><th>Status</th></tr></thead>

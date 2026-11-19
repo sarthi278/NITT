@@ -10,28 +10,42 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db import IntegrityError
 from django.db.models import Q
+from django.core.paginator import Paginator
+from django.db import transaction
 from django.utils import timezone
 from django.db import connection
 from django.views.decorators.http import require_POST
 from django.views.decorators.http import require_GET
 from django.conf import settings
 from django.http import FileResponse
+from core.audit import record_business_event
 
 from core.forms import (
+    BOMForm,
+    BOMLineFormSetFactory,
+    CustomerForm,
+    CustomerPriceFormSetFactory,
     ItemConversionFormSetFactory,
     ItemForm,
     OrderLineFormSetFactory,
     PaymentForm,
+    PriceListForm,
+    PriceListItemFormSetFactory,
+    ProductForm,
+    ProductPackSizeFormSetFactory,
     ReportFilterForm,
     StockInwardForm,
+    SupplierForm,
 )
 from core.models import (
     BOM,
+    BOMLine,
     Customer,
     Dispatch,
     Invoice,
     Item,
     Order,
+    PriceList,
     Product,
     ProductionRun,
     Purchase,
@@ -46,13 +60,18 @@ from core.services.purchasing import post_purchase
 from core.services.production import post_production_run
 from core.services.orders import approve_order, create_order, reject_order
 from core.services.invoicing import create_invoice
-from core.services.dispatch import dispatch_invoice
+from core.services.dispatch import dispatch_invoice, remaining_dispatch_quantities
 from core.services.dispatch import available_for_dispatch
 from core.services.payments import invoice_outstanding, record_payment
 from core.services.credit_notes import issue_credit_note
 from core.services.reports import build_report
-from core.services.dashboard import owner_dashboard_data
+from core.services.dashboard import (
+    admin_dashboard_data,
+    owner_dashboard_data,
+    salesman_dashboard_data,
+)
 from core.services.pdf import build_invoice_pdf, build_report_pdf
+from core.services.units import item_unit_multiplier
 
 
 def health(request):
@@ -115,22 +134,29 @@ def logout_view(request):
 @login_required
 def dashboard(request):
     roles = set(request.user.groups.values_list("name", flat=True))
-    role = next(iter(roles), "")
-    if "Production" in roles and not request.user.is_superuser:
-        return redirect("production")
-    if "Owner" in roles:
+    if "Owner" in roles or request.user.is_superuser:
         return render(
             request,
             "owner_dashboard.html",
             {"role": "Owner", **owner_dashboard_data()},
         )
+    if "Admin" in roles:
+        return render(
+            request,
+            "dashboard.html",
+            {"role": "Admin", **admin_dashboard_data()},
+        )
     if "Salesman" in roles:
-        role = "Salesman"
-    elif "Accountant" in roles:
-        role = "Accountant"
-    elif "Admin" in roles:
-        role = "Admin"
-    return render(request, "dashboard.html", {"role": role})
+        return render(
+            request,
+            "dashboard.html",
+            {"role": "Salesman", **salesman_dashboard_data(request.user)},
+        )
+    if "Accountant" in roles:
+        return render(request, "dashboard.html", {"role": "Accountant"})
+    if "Production" in roles:
+        return redirect("production")
+    return JsonResponse({"detail": "Forbidden"}, status=403)
 
 
 @role_allowed("Production", "Admin", "Owner")
@@ -138,6 +164,8 @@ def purchase_view(request):
     if request.method == "POST":
         try:
             supplier = Supplier.objects.get(pk=request.POST["supplier"])
+            if not supplier.is_active:
+                raise ValueError("This supplier is inactive.")
             item = get_object_or_404(
                 Item.objects.filter(is_active=True),
                 pk=request.POST["item"],
@@ -155,13 +183,13 @@ def purchase_view(request):
             return redirect("purchase")
         except (KeyError, ValueError) as error:
             return render(request, "purchase.html", {
-                "suppliers": Supplier.objects.all(),
+                "suppliers": Supplier.objects.filter(is_active=True),
                 "items": Item.objects.filter(is_active=True).exclude(item_type="FINISHED"),
                 "next_number": f"PUR-{Purchase.objects.count() + 1:04d}",
                 "error": str(error),
             })
     return render(request, "purchase.html", {
-        "suppliers": Supplier.objects.all(),
+        "suppliers": Supplier.objects.filter(is_active=True),
         "items": Item.objects.filter(is_active=True).exclude(item_type="FINISHED"),
         "next_number": f"PUR-{Purchase.objects.count() + 1:04d}",
     })
@@ -213,7 +241,10 @@ def production_view(request):
 
 
 def production_context(product_id=None):
-    products = Product.objects.select_related("finished_item").order_by("name")
+    products = Product.objects.filter(
+        is_active=True,
+        finished_item__is_active=True,
+    ).select_related("finished_item").order_by("name")
     try:
         selected_product = products.filter(pk=product_id).first() if product_id else None
     except (TypeError, ValueError):
@@ -402,6 +433,321 @@ def item_toggle_active_view(request, item_id):
     return redirect("stock")
 
 
+def _management_page(queryset, request):
+    paginator = Paginator(queryset, 20)
+    return paginator.get_page(request.GET.get("page"))
+
+
+@role_allowed("Admin", "Owner")
+def products_view(request):
+    search = request.GET.get("q", "").strip()[:100]
+    status = request.GET.get("status", "")
+    products = Product.objects.select_related("finished_item").prefetch_related(
+        "pack_sizes", "bom__lines__item",
+    )
+    if search:
+        products = products.filter(Q(name__icontains=search) | Q(sku__icontains=search))
+    if status in ("active", "inactive"):
+        products = products.filter(is_active=(status == "active"))
+    return render(request, "products.html", {
+        "products": _management_page(products.order_by("name"), request),
+        "search": search,
+        "status": status,
+    })
+
+
+@role_allowed("Admin", "Owner")
+def product_create_view(request):
+    return _product_form_response(request)
+
+
+@role_allowed("Admin", "Owner")
+def product_edit_view(request, product_id):
+    product = get_object_or_404(Product, pk=product_id)
+    return _product_form_response(request, product=product)
+
+
+@role_allowed("Admin", "Owner")
+@require_POST
+def product_toggle_active_view(request, product_id):
+    product = get_object_or_404(Product, pk=product_id)
+    product.is_active = not product.is_active
+    product.save(update_fields=["is_active"])
+    messages.success(
+        request,
+        f"Product {product.name} was {'activated' if product.is_active else 'deactivated'}.",
+    )
+    return redirect("products")
+
+
+def _product_form_response(request, *, product=None):
+    existing_bom = None
+    if product:
+        try:
+            existing_bom = product.bom
+        except BOM.DoesNotExist:
+            pass
+    bom = existing_bom or BOM()
+
+    if request.method == "POST":
+        template_lines = []
+        product_form = ProductForm(request.POST, instance=product)
+        bom_form = BOMForm(request.POST, instance=bom)
+        line_formset = BOMLineFormSetFactory(
+            request.POST, instance=bom, prefix="bom_lines",
+        )
+        pack_formset = ProductPackSizeFormSetFactory(
+            request.POST,
+            instance=product,
+            prefix="pack_sizes",
+        )
+        product_valid = product_form.is_valid()
+        bom_valid = bom_form.is_valid()
+        lines_valid = line_formset.is_valid()
+        packs_valid = pack_formset.is_valid()
+        template = (
+            product_form.cleaned_data.get("bom_template")
+            if product_valid
+            else None
+        )
+        if template:
+            template_lines = list(
+                template.components.select_related("item").order_by("pk")
+            )
+            for template_line in template_lines:
+                try:
+                    if template_line.qty_per_batch <= 0:
+                        raise ValueError("Component quantities must be positive.")
+                    item_unit_multiplier(template_line.item, template_line.unit)
+                except ValueError as error:
+                    line_formset.add_formset_error(str(error))
+                    lines_valid = False
+                    break
+        has_manual_lines = lines_valid and any(
+            form.cleaned_data.get("item")
+            and not form.cleaned_data.get("DELETE")
+            for form in line_formset.forms
+        )
+        has_template_lines = bool(template_lines)
+        has_bom_source = has_template_lines if template else has_manual_lines
+        if lines_valid and not has_bom_source:
+            line_formset.add_formset_error(
+                "Add a BOM line or choose a template that has BOM lines.",
+            )
+            lines_valid = False
+        has_pack_sizes = packs_valid and any(
+            form.cleaned_data.get("name")
+            and not form.cleaned_data.get("DELETE")
+            for form in pack_formset.forms
+        )
+        if packs_valid and not has_pack_sizes:
+            pack_formset.add_error(None, "Add at least one pack-size variant.")
+            packs_valid = False
+
+        if product_valid and bom_valid and lines_valid and packs_valid:
+            with transaction.atomic():
+                saved_product = product_form.save()
+                pack_formset.instance = saved_product
+                pack_formset.save()
+
+                saved_bom = bom_form.save(commit=False)
+                saved_bom.product = saved_product
+                saved_bom.save()
+                if template:
+                    saved_bom.lines.all().delete()
+                    BOMLine.objects.bulk_create([
+                        BOMLine(
+                            bom=saved_bom,
+                            item=line.item,
+                            qty_per_batch=line.qty_per_batch,
+                            unit=line.unit,
+                        )
+                        for line in template_lines
+                    ])
+                    record_business_event(
+                        action="TEMPLATE_APPLIED",
+                        entity_type="BOM",
+                        entity_id=saved_bom.pk,
+                        user=request.user,
+                        source_doc_type="PRODUCT",
+                        source_doc_id=saved_product.pk,
+                        details={"template": template.name},
+                    )
+                else:
+                    line_formset.instance = saved_bom
+                    line_formset.save()
+            messages.success(request, f"Product {saved_product.name} was saved.")
+            return redirect("products")
+    else:
+        product_form = ProductForm(instance=product)
+        bom_form = BOMForm(instance=bom)
+        line_formset = BOMLineFormSetFactory(instance=bom, prefix="bom_lines")
+        pack_formset = ProductPackSizeFormSetFactory(
+            instance=product,
+            prefix="pack_sizes",
+        )
+
+    return render(request, "product_form.html", {
+        "product": product,
+        "product_form": product_form,
+        "bom_form": bom_form,
+        "line_formset": line_formset,
+        "pack_formset": pack_formset,
+    })
+
+
+@role_allowed("Admin", "Owner")
+def customers_view(request):
+    search = request.GET.get("q", "").strip()[:100]
+    state = request.GET.get("state", "").strip()[:80]
+    customer_type = request.GET.get("customer_type", "")
+    customers = Customer.objects.select_related(
+        "assigned_salesman", "price_list",
+    )
+    if search:
+        customers = customers.filter(
+            Q(name__icontains=search)
+            | Q(gstin__icontains=search)
+            | Q(address__icontains=search)
+        )
+    if state:
+        customers = customers.filter(state__icontains=state)
+    if customer_type in Customer.CustomerType.values:
+        customers = customers.filter(customer_type=customer_type)
+    return render(request, "customers.html", {
+        "customers": _management_page(customers.order_by("name"), request),
+        "search": search,
+        "state": state,
+        "customer_type": customer_type,
+        "customer_types": Customer.CustomerType.choices,
+    })
+
+
+@role_allowed("Admin", "Owner")
+def customer_create_view(request):
+    return _customer_form_response(request)
+
+
+@role_allowed("Admin", "Owner")
+def customer_edit_view(request, customer_id):
+    customer = get_object_or_404(Customer, pk=customer_id)
+    return _customer_form_response(request, customer=customer)
+
+
+def _customer_form_response(request, *, customer=None):
+    if request.method == "POST":
+        form = CustomerForm(request.POST, instance=customer)
+        price_formset = CustomerPriceFormSetFactory(
+            request.POST, instance=customer, prefix="prices",
+        )
+        if form.is_valid() and price_formset.is_valid():
+            with transaction.atomic():
+                saved_customer = form.save()
+                price_formset.instance = saved_customer
+                price_formset.save()
+            messages.success(request, f"Customer {saved_customer.name} was saved.")
+            return redirect("customers")
+    else:
+        form = CustomerForm(instance=customer)
+        price_formset = CustomerPriceFormSetFactory(
+            instance=customer, prefix="prices",
+        )
+    return render(request, "customer_form.html", {
+        "customer": customer,
+        "form": form,
+        "price_formset": price_formset,
+    })
+
+
+@role_allowed("Admin", "Owner")
+def suppliers_view(request):
+    search = request.GET.get("q", "").strip()[:100]
+    state = request.GET.get("state", "").strip()[:80]
+    suppliers = Supplier.objects.all()
+    if search:
+        suppliers = suppliers.filter(
+            Q(name__icontains=search)
+            | Q(gstin__icontains=search)
+            | Q(address__icontains=search)
+        )
+    if state:
+        suppliers = suppliers.filter(state__icontains=state)
+    return render(request, "suppliers.html", {
+        "suppliers": _management_page(suppliers.order_by("name"), request),
+        "search": search,
+        "state": state,
+    })
+
+
+@role_allowed("Admin", "Owner")
+def supplier_create_view(request):
+    return _supplier_form_response(request)
+
+
+@role_allowed("Admin", "Owner")
+def supplier_edit_view(request, supplier_id):
+    supplier = get_object_or_404(Supplier, pk=supplier_id)
+    return _supplier_form_response(request, supplier=supplier)
+
+
+def _supplier_form_response(request, *, supplier=None):
+    form = SupplierForm(request.POST or None, instance=supplier)
+    if request.method == "POST" and form.is_valid():
+        saved_supplier = form.save()
+        messages.success(request, f"Supplier {saved_supplier.name} was saved.")
+        return redirect("suppliers")
+    return render(request, "supplier_form.html", {
+        "supplier": supplier,
+        "form": form,
+    })
+
+
+@role_allowed("Admin", "Owner")
+def price_lists_view(request):
+    return render(request, "price_lists.html", {
+        "price_lists": _management_page(
+            PriceList.objects.prefetch_related("items__product").order_by("name"),
+            request,
+        ),
+    })
+
+
+@role_allowed("Admin", "Owner")
+def price_list_create_view(request):
+    return _price_list_form_response(request)
+
+
+@role_allowed("Admin", "Owner")
+def price_list_edit_view(request, price_list_id):
+    price_list = get_object_or_404(PriceList, pk=price_list_id)
+    return _price_list_form_response(request, price_list=price_list)
+
+
+def _price_list_form_response(request, *, price_list=None):
+    if request.method == "POST":
+        form = PriceListForm(request.POST, instance=price_list)
+        item_formset = PriceListItemFormSetFactory(
+            request.POST, instance=price_list, prefix="items",
+        )
+        if form.is_valid() and item_formset.is_valid():
+            with transaction.atomic():
+                saved_price_list = form.save()
+                item_formset.instance = saved_price_list
+                item_formset.save()
+            messages.success(request, f"Price list {saved_price_list.name} was saved.")
+            return redirect("price_lists")
+    else:
+        form = PriceListForm(instance=price_list)
+        item_formset = PriceListItemFormSetFactory(
+            instance=price_list, prefix="items",
+        )
+    return render(request, "price_list_form.html", {
+        "price_list": price_list,
+        "form": form,
+        "item_formset": item_formset,
+    })
+
+
 @role_allowed("Production", "Admin", "Accountant", "Owner")
 def ledger_view(request):
     movements = StockMovement.objects.select_related("item", "user").order_by("-timestamp", "-id")
@@ -410,9 +756,12 @@ def ledger_view(request):
 
 @role_allowed("Salesman")
 def order_create_view(request):
-    customers = Customer.objects.filter(assigned_salesman=request.user).order_by("name")
+    customers = Customer.objects.filter(
+        assigned_salesman=request.user,
+        is_active=True,
+    ).order_by("name")
     if request.user.is_superuser:
-        customers = Customer.objects.all().order_by("name")
+        customers = Customer.objects.filter(is_active=True).order_by("name")
 
     if request.method == "POST":
         formset = OrderLineFormSetFactory(request.POST, prefix="lines")
@@ -567,13 +916,26 @@ def invoice_detail_view(request, invoice_id):
         return JsonResponse({"detail": "Forbidden"}, status=403)
     if not can_view_all and invoice.order.created_by_id != request.user.pk:
         return JsonResponse({"detail": "Forbidden"}, status=403)
+    remaining = remaining_dispatch_quantities(invoice)
+    dispatch_lines = [
+        {"line": line, "remaining": remaining[line.pk]}
+        for line in invoice.lines.all()
+        if remaining[line.pk] > Decimal("0")
+    ]
+    dispatches = Dispatch.objects.filter(invoice=invoice).prefetch_related(
+        "lines__invoice_line",
+    ).order_by("dispatch_date", "pk")
+    has_dispatch = dispatches.exists()
     return render(request, "invoice_detail.html", {
         "invoice": invoice,
         "can_dispatch": request.user.is_superuser
         or bool(groups.intersection({"Admin", "Owner"})),
         "can_credit": request.user.is_superuser
         or bool(groups.intersection({"Admin", "Owner"})),
-        "has_dispatch": Dispatch.objects.filter(invoice=invoice).exists(),
+        "has_dispatch": has_dispatch,
+        "dispatches": dispatches,
+        "dispatch_lines": dispatch_lines,
+        "dispatch_submission_key": uuid.uuid4(),
         "credit_note": getattr(invoice, "credit_note", None),
         "outstanding": invoice_outstanding(invoice),
     })
@@ -582,12 +944,17 @@ def invoice_detail_view(request, invoice_id):
 @role_allowed("Admin", "Owner")
 @require_POST
 def invoice_dispatch_view(request, invoice_id):
-    invoice = get_object_or_404(Invoice, pk=invoice_id)
+    invoice = get_object_or_404(Invoice.objects.prefetch_related("lines"), pk=invoice_id)
     try:
         dispatch, created = dispatch_invoice(
             invoice=invoice,
             dispatched_by=request.user,
             dispatch_date=timezone.localdate(),
+            dispatch_quantities={
+                str(line.pk): request.POST.get(f"quantity_{line.pk}", "0")
+                for line in invoice.lines.all()
+            },
+            submission_key=request.POST.get("submission_key"),
         )
     except ValueError as error:
         messages.error(request, str(error))

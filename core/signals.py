@@ -1,5 +1,6 @@
 import json
 
+from django.apps import apps
 from django.db.models.signals import post_save, pre_delete, pre_save
 from django.dispatch import receiver
 
@@ -19,10 +20,48 @@ def serialize_values(values):
     return json.dumps(values, default=str)
 
 
+def source_document(instance):
+    if hasattr(instance, "source_doc_type") and hasattr(instance, "source_doc_id"):
+        return instance.source_doc_type, instance.source_doc_id
+    if instance.__class__.__name__ == "Order":
+        return "ORDER", instance.pk
+    if hasattr(instance, "order_id"):
+        return "ORDER", instance.order_id
+    if hasattr(instance, "invoice_id"):
+        return "INVOICE", instance.invoice_id
+    source_types = {
+        "StockInward": "STOCK_INWARD",
+        "Purchase": "PURCHASE",
+        "ProductionRun": "PRODUCTION_RUN",
+    }
+    if instance.__class__.__name__ in source_types:
+        return source_types[instance.__class__.__name__], instance.pk
+    return "", None
+
+
+def audit_actor(instance):
+    user = get_current_user()
+    if user:
+        return user
+    for field_name in (
+        "user",
+        "created_by",
+        "posted_by",
+        "approved_by",
+        "received_by",
+        "dispatched_by",
+    ):
+        user = getattr(instance, field_name, None)
+        if user:
+            return user
+    return None
+
+
 def should_track(sender):
     return (
-        sender._meta.app_label == "core"
-        and sender is not AuditLog
+        sender._meta.apps is apps
+        and sender._meta.app_label == "core"
+        and sender._meta.label_lower != AuditLog._meta.label_lower
         and not sender._meta.proxy
     )
 
@@ -49,8 +88,9 @@ def log_save(sender, instance, created, raw=False, update_fields=None, **kwargs)
     if raw or not should_track(sender):
         return
 
-    user = get_current_user()
+    user = audit_actor(instance)
     current_values = get_model_fields(instance)
+    source_doc_type, source_doc_id = source_document(instance)
 
     if created:
         AuditLog.objects.create(
@@ -59,6 +99,8 @@ def log_save(sender, instance, created, raw=False, update_fields=None, **kwargs)
             entity_type=sender.__name__,
             entity_id=instance.pk,
             new_value=serialize_values(current_values),
+            source_doc_type=source_doc_type,
+            source_doc_id=source_doc_id,
         )
         return
 
@@ -84,6 +126,8 @@ def log_save(sender, instance, created, raw=False, update_fields=None, **kwargs)
                 field_name=field_name,
                 old_value=str(old_value),
                 new_value=str(new_value),
+                source_doc_type=source_doc_type,
+                source_doc_id=source_doc_id,
             )
 
 
@@ -92,10 +136,13 @@ def log_delete(sender, instance, **kwargs):
     if not should_track(sender):
         return
 
+    source_doc_type, source_doc_id = source_document(instance)
     AuditLog.objects.create(
-        user=get_current_user(),
+        user=audit_actor(instance),
         action="DELETE",
         entity_type=sender.__name__,
         entity_id=instance.pk,
         old_value=serialize_values(get_model_fields(instance)),
+        source_doc_type=source_doc_type,
+        source_doc_id=source_doc_id,
     )

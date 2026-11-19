@@ -235,11 +235,16 @@ def build_report(report_type, start_date=None, end_date=None):
                     consumption.variance_pct,
                     consumption.flagged,
                     consumption.material_cost,
+                    run.total_cost,
+                    run.cost_per_packet,
+                    run.margin_per_packet,
+                    run.margin_pct,
                 ))
         return "Production variance", (
             "Run", "Date", "Product", "Expected output", "Good output",
             "Yield variance %", "Material", "Planned", "Actual", "Wastage",
-            "Material variance %", "Flagged", "Material cost",
+            "Material variance %", "Flagged", "Material cost", "Total production cost",
+            "Cost per packet", "Gross margin per packet", "Margin %",
         ), rows
 
     if report_type == "payments":

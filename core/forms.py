@@ -2,22 +2,30 @@ from decimal import Decimal
 
 from django import forms
 from django.core.exceptions import ValidationError
+from django.db.models import Q
 from django.forms import BaseFormSet, BaseInlineFormSet, formset_factory, inlineformset_factory
 from django.utils import timezone
 
 from core.models import (
     BOMLine,
+    BOM,
+    BOMTemplate,
+    Customer,
+    CustomerPrice,
     Item,
     Invoice,
     Payment,
     ProductionConsumption,
     Product,
+    ProductPackSize,
+    PriceList,
+    PriceListItem,
     PurchaseLine,
     Supplier,
     UnitConversion,
 )
 from core.services.reports import REPORTS
-from core.services.units import to_item_base
+from core.services.units import item_unit_multiplier, to_item_base
 
 
 def item_has_business_history(item):
@@ -157,6 +165,7 @@ class OrderLineForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.fields["product"].queryset = Product.objects.filter(
             finished_item__is_active=True,
+            is_active=True,
         ).order_by("name")
         self.fields["product"].label = "Product"
         self.fields["quantity"].label = "Packets"
@@ -308,3 +317,261 @@ class StockInwardForm(forms.Form):
             self.add_error("expiry_date", "Expiry date must be after manufacturing date.")
 
         return cleaned_data
+
+
+class ProductForm(forms.ModelForm):
+    bom_template = forms.ModelChoiceField(
+        queryset=BOMTemplate.objects.order_by("name"),
+        required=False,
+        help_text="Selecting a template replaces this product's current BOM lines.",
+    )
+
+    class Meta:
+        model = Product
+        fields = [
+            "name",
+            "sku",
+            "finished_item",
+            "hsn_code",
+            "gst_rate",
+            "selling_price",
+            "is_active",
+        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        finished_items = Item.objects.filter(item_type=Item.ItemType.FINISHED)
+        if self.instance.pk and self.instance.finished_item_id:
+            finished_items = finished_items.filter(
+                Q(is_active=True) | Q(pk=self.instance.finished_item_id)
+            )
+        else:
+            finished_items = finished_items.filter(is_active=True)
+        self.fields["finished_item"].queryset = finished_items.order_by("name")
+        for field in self.fields.values():
+            field.widget.attrs["class"] = (
+                "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+            )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        finished_item = cleaned_data.get("finished_item")
+        if (
+            finished_item
+            and not finished_item.is_active
+            and cleaned_data.get("is_active")
+        ):
+            self.add_error("finished_item", "An active product needs an active finished item.")
+        return cleaned_data
+
+
+class BOMForm(forms.ModelForm):
+    batch_yield_packets = forms.IntegerField(min_value=1)
+    tolerance_pct = forms.DecimalField(
+        max_digits=16,
+        decimal_places=3,
+        min_value=Decimal("0"),
+    )
+
+    class Meta:
+        model = BOM
+        fields = ["batch_yield_packets", "tolerance_pct"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs["class"] = "form-control"
+
+
+class BOMLineForm(forms.ModelForm):
+    qty_per_batch = forms.DecimalField(
+        max_digits=16,
+        decimal_places=3,
+        min_value=Decimal("0.001"),
+    )
+
+    class Meta:
+        model = BOMLine
+        fields = ["item", "qty_per_batch", "unit"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        items = Item.objects.exclude(item_type=Item.ItemType.FINISHED)
+        if self.instance.pk and self.instance.item_id:
+            items = items.filter(Q(is_active=True) | Q(pk=self.instance.item_id))
+        else:
+            items = items.filter(is_active=True)
+        self.fields["item"].queryset = items.order_by("name")
+        for field in self.fields.values():
+            field.widget.attrs["class"] = (
+                "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+            )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        item = cleaned_data.get("item")
+        unit = cleaned_data.get("unit")
+        if item and unit:
+            try:
+                item_unit_multiplier(item, unit)
+            except ValueError as error:
+                self.add_error("unit", str(error))
+        return cleaned_data
+
+
+class BOMLineFormSet(BaseInlineFormSet):
+    def add_formset_error(self, message):
+        self.non_form_errors().append(message)
+
+
+BOMLineFormSetFactory = inlineformset_factory(
+    BOM,
+    BOMLine,
+    form=BOMLineForm,
+    formset=BOMLineFormSet,
+    extra=1,
+    can_delete=True,
+    max_num=30,
+    validate_max=True,
+)
+
+
+class ProductPackSizeForm(forms.ModelForm):
+    packet_count = forms.IntegerField(min_value=1)
+
+    class Meta:
+        model = ProductPackSize
+        fields = ["name", "packet_count"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs["class"] = "form-control"
+
+
+ProductPackSizeFormSetFactory = inlineformset_factory(
+    Product,
+    ProductPackSize,
+    form=ProductPackSizeForm,
+    extra=1,
+    can_delete=True,
+    max_num=10,
+    validate_max=True,
+)
+
+
+class CustomerForm(forms.ModelForm):
+    class Meta:
+        model = Customer
+        fields = [
+            "name",
+            "customer_type",
+            "gstin",
+            "state",
+            "address",
+            "phone",
+            "email",
+            "assigned_salesman",
+            "price_list",
+            "is_active",
+        ]
+        widgets = {"address": forms.Textarea(attrs={"rows": 3})}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        salesman = self.fields["assigned_salesman"].queryset.filter(
+            groups__name="Salesman",
+        )
+        if self.instance.pk and self.instance.assigned_salesman_id:
+            salesman = self.fields["assigned_salesman"].queryset.filter(
+                Q(groups__name="Salesman")
+                | Q(pk=self.instance.assigned_salesman_id)
+            )
+        self.fields["assigned_salesman"].queryset = salesman.distinct().order_by("username")
+        price_lists = PriceList.objects.filter(is_active=True)
+        if self.instance.pk and self.instance.price_list_id:
+            price_lists = PriceList.objects.filter(
+                Q(is_active=True) | Q(pk=self.instance.price_list_id)
+            )
+        self.fields["price_list"].queryset = price_lists.order_by("name")
+        for field in self.fields.values():
+            field.widget.attrs["class"] = (
+                "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+            )
+
+
+class CustomerPriceForm(forms.ModelForm):
+    class Meta:
+        model = CustomerPrice
+        fields = ["product", "unit_price"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["product"].queryset = Product.objects.order_by("name")
+        for field in self.fields.values():
+            field.widget.attrs["class"] = (
+                "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+            )
+        for field in self.fields.values():
+            field.widget.attrs["class"] = (
+                "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+            )
+
+
+CustomerPriceFormSetFactory = inlineformset_factory(
+    Customer,
+    CustomerPrice,
+    form=CustomerPriceForm,
+    extra=1,
+    can_delete=True,
+    max_num=30,
+    validate_max=True,
+)
+
+
+class SupplierForm(forms.ModelForm):
+    class Meta:
+        model = Supplier
+        fields = ["name", "gstin", "state", "address", "phone", "email", "is_active"]
+        widgets = {"address": forms.Textarea(attrs={"rows": 3})}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs["class"] = (
+                "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+            )
+
+
+class PriceListForm(forms.ModelForm):
+    class Meta:
+        model = PriceList
+        fields = ["name", "is_active"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs["class"] = (
+                "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+            )
+
+
+class PriceListItemForm(forms.ModelForm):
+    class Meta:
+        model = PriceListItem
+        fields = ["product", "unit_price"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["product"].queryset = Product.objects.filter(is_active=True).order_by("name")
+
+
+PriceListItemFormSetFactory = inlineformset_factory(
+    PriceList,
+    PriceListItem,
+    form=PriceListItemForm,
+    extra=1,
+    can_delete=True,
+    max_num=50,
+    validate_max=True,
+)

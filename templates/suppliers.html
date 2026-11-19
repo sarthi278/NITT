@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Suppliers · Order-to-Audit{% endblock %}
+{% block content %}
+<div class="page-heading"><div><h1 class="page-title">Suppliers</h1><p class="page-subtitle">Manage supplier contact, address, state, and GST registration details.</p></div><a class="btn btn-success" href="{% url 'supplier_create' %}">Add supplier</a></div>
+<form method="get" class="card mb-3"><div class="card-body row g-3 align-items-end"><div class="col-12 col-md-6"><label class="form-label" for="supplierSearch">Search</label><input class="form-control" id="supplierSearch" name="q" value="{{ search }}" placeholder="Name, GSTIN or address"></div><div class="col-8 col-md-4"><label class="form-label" for="supplierState">State</label><input class="form-control" id="supplierState" name="state" value="{{ state }}"></div><div class="col-4 col-md-2 d-flex gap-2"><button class="btn btn-outline-success flex-grow-1">Filter</button><a class="btn btn-outline-secondary" href="{% url 'suppliers' %}">Clear</a></div></div></form>
+<div class="card"><div class="table-responsive border-0"><table class="table"><thead><tr><th>Name / GSTIN</th><th>State</th><th>Contact</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+{% for supplier in suppliers %}<tr><td><strong>{{ supplier.name }}</strong><div class="small text-secondary">{{ supplier.gstin|default:"No GSTIN" }}</div></td><td>{{ supplier.state|default:"—" }}</td><td>{{ supplier.phone }}{% if supplier.email %}<div class="small text-secondary">{{ supplier.email }}</div>{% endif %}</td><td>{% if supplier.is_active %}Active{% else %}Inactive{% endif %}</td><td><a class="btn btn-sm btn-outline-success" href="{% url 'supplier_edit' supplier.pk %}">Edit</a></td></tr>
+{% empty %}<tr><td colspan="5" class="text-center text-secondary py-4">No suppliers match this search.</td></tr>{% endfor %}
+</tbody></table></div></div>{% include "pagination.html" with page_obj=suppliers %}
+{% endblock %}

@@ -4,11 +4,13 @@ from decimal import Decimal
 from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.test import TestCase
+from django.utils import timezone
 
 from core.models import Customer, Payment, Product
 from core.services.invoicing import create_invoice
 from core.services.orders import approve_order, create_order
 from core.services.payments import record_payment
+from core.services.pdf import amount_in_words
 from core.services.reports import build_report
 
 
@@ -68,6 +70,45 @@ class ReportAndPdfTests(TestCase):
         response = self.client.get("/dashboard/")
         self.assertContains(response, "Owner dashboard")
         self.assertContains(response, "Outstanding dues")
+        self.assertContains(response, "Taxable sales")
+        self.assertContains(response, "Good production")
+
+    def test_owner_dashboard_metrics_use_live_sales_data(self):
+        customer = Customer.objects.get(name="Retailer A")
+        product = Product.objects.get(sku="MUR-200")
+        order, _ = create_order(
+            customer=customer,
+            created_by=self.salesman,
+            lines=[{"product": product, "quantity": Decimal("2")}],
+            client_uuid="7e43f87d-4c64-4e78-b3d6-a9a7ef361d42",
+        )
+        approve_order(
+            order=order,
+            approved_quantities={order.lines.get().pk: Decimal("2")},
+            approved_by=self.admin,
+        )
+        create_invoice(
+            order=order,
+            posted_by=self.admin,
+            invoice_date=timezone.localdate(),
+        )
+
+        self.client.force_login(self.owner)
+        response = self.client.get("/dashboard/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["today_sales"], Decimal("100.00"))
+        self.assertEqual(response.context["monthly_revenue"], Decimal("100.00"))
+
+    def test_invoice_amount_in_words_uses_indian_numbering_and_paise(self):
+        self.assertEqual(
+            amount_in_words(Decimal("7875.00")),
+            "Rupees Seven Thousand Eight Hundred Seventy Five Only",
+        )
+        self.assertEqual(
+            amount_in_words(Decimal("123456.78")),
+            "Rupees One Lakh Twenty Three Thousand Four Hundred Fifty Six "
+            "and Seventy Eight Paise Only",
+        )
 
     def test_salesman_cannot_access_finance_reports(self):
         self.client.force_login(self.salesman)

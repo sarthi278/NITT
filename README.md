@@ -1,132 +1,123 @@
-# Order-to-Audit Prototype
+# NITT ERP — order-to-audit workflow
 
-This repository is a working Django prototype for an order-to-audit workflow. It includes inventory and production, sales and invoicing, payments, reports, a role-aware dashboard, and a mobile order form with an offline outbox.
+A server-rendered Django ERP demo for inventory, production, sales, GST invoicing, collections, and reports. The stock ledger is the source of truth; operational changes go through transactional services rather than editable balance fields.
 
-## Run with Docker Compose
+## Run the application
+
+### Docker Compose (recommended demo)
+
+Start Docker Desktop, then in PowerShell:
 
 ```powershell
 Copy-Item .env.example .env
 docker compose up --build
 ```
 
-Open `http://localhost:8000/`. Health endpoint: `http://localhost:8000/health/`.
+In another terminal, seed the benchmark:
 
-## Start from VS Code
+```powershell
+docker compose exec web python manage.py seed_benchmark
+```
 
-Press **Ctrl+Shift+B** to run the default build task. It starts PostgreSQL in a Docker Compose container and Django in a separate integrated terminal; Django serves both the HTML frontend and backend. No Node/frontend dependency install is needed. The task creates `.venv` and installs `requirements.txt` only when the environment is missing or the requirements have changed, then waits for PostgreSQL, runs migrations, and starts the server.
+Open [http://localhost:8000/](http://localhost:8000/); `/health/` reports the active database backend. Stop with `Ctrl+C` and `docker compose down` (database data remains in the named volume). Compose is the development/demo configuration and runs Django's development server.
 
-Start Docker Desktop first. `.env` is read if present and is never created, changed, or printed by the startup scripts. Set `USE_SQLITE=1` in the environment to skip Docker and run the existing SQLite database. The default application and PostgreSQL host ports are 8000 and 5432; override them with `APP_PORT` and `POSTGRES_HOST_PORT`.
-
-If an older server already owns the application port but uses a different database backend, the task reports the mismatch rather than starting a duplicate. Stop that server and press Ctrl+Shift+B again.
-
-## Run locally
+### Local SQLite
 
 ```powershell
 python -m venv .venv
-.venv\Scripts\Activate.ps1
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+$env:DJANGO_DEBUG = "1"
 python manage.py migrate
+python manage.py seed_benchmark
 python manage.py runserver
 ```
 
-Without `DATABASE_HOST`, Django uses SQLite.
+`DJANGO_DEBUG=1` is required for local development; production mode deliberately rejects the development secret key. Without `DATABASE_HOST`, the default database is the repository's `db.sqlite3`.
 
-### Configure hosted PostgreSQL
+The seeded demo passwords are `demo123` for `sales-a`, `sales-b`, `admin`, `production`, `accountant`, and `owner`. Change/remove these accounts before exposing a deployment.
 
-Set these variables in the deployment platform's secret/environment-variable settings (do not commit `.env`):
+## Benchmark workflow
 
-- `DATABASE_HOST`: hostname only, without `postgres://` or `https://`
-- `DATABASE_PORT`: provider's PostgreSQL port, usually `5432`
-- `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD`
-- `DATABASE_SSLMODE=require` if the provider requires TLS
-- `DJANGO_SECRET_KEY`: a private random value
-- `DJANGO_DEBUG=0`
+`seed_benchmark` is additive/idempotent: it refreshes benchmark master data and creates opening balances only when absent. It does not erase orders, purchases, invoices, or payments. Use it repeatedly without duplicating opening stock.
+
+For a reproducible clean demo, use a dedicated local/demo database. Set these values in its untracked `.env`:
+
+```dotenv
+DJANGO_DEBUG=1
+DJANGO_ENV=development
+BENCHMARK_DEMO_DATABASE=order_audit
+BENCHMARK_RESET_ENABLED=1
+```
+
+The configured benchmark name must exactly match `DATABASE_NAME`; PostgreSQL reset is limited to local Compose hosts (`db`, `localhost`, or `127.0.0.1`). The command also requires `--confirm` and refuses production mode. It clears demo transactions and their audit history, retains auth and master tables, then calls `seed_benchmark` to restore benchmark masters and opening stock:
+
+```powershell
+docker compose up -d --force-recreate web
+docker compose exec web python manage.py reset_benchmark --confirm
+```
+
+Never enable reset for a database containing non-demo business data.
+
+### Benchmark values
+
+- Opening stock: flour 100 kg, oil 30 L, spice 5 kg, 200 g pouches 500, cartons 30, and finished 200 g packets 50.
+- The 60 kg flour purchase raises flour to 160 kg.
+- Standard 200 g Murukku batch: 200 packets; 500 g variant: 80 packets. Their BOMs use distinct pouch quantities and carton yields.
+- Benchmark 200 g production: flour 120 kg, oil 19.5 L, spice 3.8 kg, 200 g pouches 306, cartons 21, finished goods 238; production cost ₹5,855, ₹31.14 per good packet, and ₹18.86 margin.
+- Retailer A's 150 packets invoice at ₹7,500 taxable + ₹187.50 CGST + ₹187.50 SGST = ₹7,875. Dispatch leaves 88 packets.
+- Distributor B requests 120 packets and is short by 32. Approval for 88 packets yields ₹4,400 taxable + ₹220 IGST.
+- A ₹4,000 Retailer A payment leaves ₹3,875 outstanding.
+
+Run the end-to-end test that asserts this workflow with:
+
+```powershell
+$env:DJANGO_DEBUG = "1"
+python -m pytest core\tests\test_benchmark_e2e.py -q
+```
+
+## Roles and controls
+
+- Django Admin is limited to active staff who are in the `Admin` or `Owner` group (or superusers). Seeded `Production` and `Accountant` staff cannot enter it.
+- Admin/Owner can manage products, BOMs, customers, suppliers, price lists, and company settings. Production/Admin/Owner retain their existing operational stock and production permissions.
+- Order submission is scoped to an active assigned customer. Customer-specific prices override price-list prices, which override the product price.
+- Invoice, dispatch, payment, approval, rejection, credit-note, stock, and reporting actions are role-checked. Sensitive mutations use POST forms.
+- Dispatches can be split across multiple shipments; approved but not-yet-dispatched quantities reserve stock during subsequent order approvals.
+- StockMovement and AuditLog are append-only through the model APIs and read-only in Django Admin. Corrections use adjustment/reversal records.
+- The Owner dashboard shows database-derived sales and production KPIs with six-month trends; Admin and Salesman dashboards show role-specific activity.
+- GSTIN format validation, intra-state CGST/SGST, interstate IGST, invoice PDF company details and Indian-numbered amount-in-words, and export-safe CSV/XLSX values are supported.
+
+## Configuration and production
+
+Do not commit `.env` or use the Compose development credentials in production. Configure secret environment variables:
+
+- `DJANGO_SECRET_KEY`: long, private random value
+- `DJANGO_DEBUG=0`, `DJANGO_ENV=production`
 - `DJANGO_ALLOWED_HOSTS`: comma-separated deployed hostnames
+- `DJANGO_CSRF_TRUSTED_ORIGINS`: full `https://` origins
+- `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD`
+- `DATABASE_SSLMODE=require` when required by the database provider
 
-The app selects PostgreSQL when `DATABASE_HOST` is set. Run `python manage.py migrate` against that environment to create its schema. `python manage.py seed_benchmark` is optional and should only be used for a fresh demo database. This does not copy data from the local SQLite database.
+The production Dockerfile uses Gunicorn and WhiteNoise. Apply migrations with `python manage.py migrate`; do not run the benchmark reset or seed commands in production. Configure company name/address/GSTIN/contact and FY start month in Django Admin before issuing invoices. Run `python manage.py check --deploy` against deployment settings before release.
 
-Verify a connection from the configured app environment with:
+Non-debug startup requires a non-demo `DJANGO_SECRET_KEY`, PostgreSQL `DATABASE_HOST` and non-demo `DATABASE_PASSWORD`, plus explicit `DJANGO_ALLOWED_HOSTS` and HTTPS `DJANGO_CSRF_TRUSTED_ORIGINS`. The committed Compose defaults are for local development and are intentionally rejected in production mode.
 
-```powershell
-python manage.py shell -c "from django.db import connection; connection.ensure_connection(); print(connection.vendor, connection.cursor().execute('SELECT 1').fetchone())"
-```
-
-## Stack justification
-
-Django provides authentication, groups, migrations and admin in one framework, reducing custom infrastructure. PostgreSQL provides a robust transactional ledger when run with Docker, while SQLite keeps local setup simple. Server-rendered Bootstrap 5 pages keep the mobile salesman and desktop workflows readable with little JavaScript.
-
-## Engineering decisions
-
-- Money and quantities use Decimal fields: 2 decimal places for money and 3 decimal places for quantities.
-- `StockMovement` is append-only in business services; ledger-derived balances are never stored in an editable stock table.
-- `transaction.atomic()` and `select_for_update()` protect stock-affecting services.
-- All business rules are placed in `services/` modules.
-- Django auth groups provide Salesman, Admin, Production, Accountant, and Owner roles; views and querysets enforce access.
-
-## Phase 0 status
-
-The Django skeleton, Docker environment, and Mermaid data-model diagram are ready.
-
-## Phase 1 status
-
-Run the benchmark seed:
+## Verification
 
 ```powershell
-python manage.py migrate
-python manage.py seed_benchmark
-pytest -q
+$env:DJANGO_DEBUG = "1"
+python manage.py check
+python manage.py makemigrations --check --dry-run
+python -m pytest -q
+docker compose config --quiet
 ```
 
-Test logins use password `demo123`: `sales-a`, `sales-b`, `admin`, `production`, `accountant`, `owner`.
+## Design and demo
 
-The seed creates Retailer A, Distributor B, Murukku 200 g, its BOM and benchmark opening balances. Inventory balances are not stored on Item; they are computed from append-only `StockMovement.qty_in - qty_out`.
+See [DESIGN_NOTE.md](./DESIGN_NOTE.md) for the architecture, data integrity, and limitations; use [DEMO_SCRIPT.md](./DEMO_SCRIPT.md) for the walkthrough.
 
-## Phase 2 status
+## Known limitations
 
-The production role can post purchases and BOM-driven production runs from responsive Bootstrap screens. The run form renders the selected product's BOM lines instead of assuming fixed material SKUs. Purchases and production post ledger movements inside database transactions, and production checks all required stock before writing any run data. The stock summary and ledger screens are available to production, admin, owner and accountant roles.
-
-### Production valuation and rounding
-
-Inventory valuation uses moving weighted average cost per base unit. Every new inward movement records its normalized `unit_cost_base`; each production consumption line is valued at the item's current weighted average, rounded to cents, and run overheads are added directly to that run. Cost per packet is total run cost divided by good output, rounded half-up to cents; margin uses that displayed cost per packet. For the benchmark run, this gives material cost ₹4,055, total cost ₹5,855, cost per packet ₹31.14, and margin ₹18.86 per packet.
-
-Quantities are converted from the BOM or purchase unit to the item's base unit through its `UnitConversion` records. A production run records normal issue and wastage as distinct movements, while its finished-goods movement includes only good output. A migration backfills known opening-stock and stock-inward rates; historical purchase rows do not retain their original display unit, so their pre-migration unit rates cannot be reliably normalized.
-
-## Orders, invoices, and collections
-
-Salesmen can submit orders only for customers assigned to them. A client UUID makes repeated online/offline submissions idempotent. Admin and Owner users review availability, reduce quantities for partial approval, hold lines at zero, or reject an order. Dispatch checks and locks finished stock again before posting outbound movements.
-
-Invoices use financial-year numbers such as `2026-27/0001`. Taxable values are rounded per line to paise; GST is then rounded on the invoice taxable total per GST rate, split between CGST/SGST for Tamil Nadu or recorded as IGST for other states. Where multiple lines share a rate, rounded tax cents are allocated to lines by largest remainder so line totals reconcile to the invoice total. Customer-specific prices override price-list prices, which override the product selling price.
-
-Payments are append-only and cannot exceed an invoice's outstanding balance. A full credit note is allowed only for an invoice with no recorded payments; a dispatched invoice's credit note posts reversal stock movements. Dispatch allocates dated batches by FEFO, skips expired lots, and consumes unbatched stock only after eligible lots. Admin and Owner can collect payments and approve orders; Accountant has read-only access to finance reports and collections.
-
-## Reports and dashboard
-
-Admin, Owner, and Accountant users can filter sales, customer/product sales, GST/B2B-B2C, HSN, purchases, stock, ledger, production variance, collections, and outstanding ageing reports by date. Reports export to CSV, Excel, and PDF; invoice PDFs are also available. The Owner dashboard shows today's orders, low-stock items, today's variance alerts, outstanding dues, recent run costs, and current stock.
-
-Audit logging records model changes with the acting user, field-level old/new values, and timestamp. Posted invoices are not deleted; full credit notes reverse invoice balances and, when already dispatched, restore stock through new ledger movements.
-
-## Known gaps
-
-The salesman order form queues submissions in IndexedDB and retries them through the service worker or the browser's online event; offline entry requires the form to have been loaded while online. Automatic refund tracking and push/email low-stock notifications are not implemented. Legacy purchase movements without their original display unit cannot be reconstructed into a reliable base-unit cost by the migration.
-
-## Stock inward
-
-Production, Admin, and Owner users can add stock from the Stock page. Each entry creates a persisted inward document and an `ADJUSTMENT` `StockMovement` in one transaction. The movement quantity is converted to the item's base unit using that item's `UnitConversion` records (the base unit is always available as a 1:1 option); balances continue to come only from the ledger. Repeated submissions carry a unique form token, so retrying the same submission cannot add stock twice.
-
-Assumptions for stock inward:
-
-- The unit cost is entered and recorded per selected display unit; the inward document retains that unit while the movement quantity is in base units.
-- Manufacturing or expiry dates require a batch number. Manufacturing cannot be after the entry date, expiry must be after manufacturing and on or after entry, and expired stock is rejected.
-- A batch number is unique per item. Reusing an existing batch is allowed only when any supplied dates match its recorded dates.
-
-Apply the new schema with `python manage.py migrate` before running the application or deploying the feature.
-
-## Item management
-
-Admin, Owner, and Production users can create and edit items from the Stock page. Item creation saves the item and its unit conversions atomically and does not create stock movements. Search, item-type filtering, reorder levels, and low-stock status are shown in the stock list. Items are deactivated/reactivated rather than hard-deleted so movements and business history remain intact. An item's base unit cannot be changed after it has related stock or business records.
-
-The Item model has no description field, so the form does not add one. GST rate is treated as a percentage from 0 to 100; reorder level is expressed in the base unit.
-
-## Demo
-
-Follow [DEMO_SCRIPT.md](./DEMO_SCRIPT.md) for a timed walkthrough of the benchmark workflow and the expected values to show.
+- Offline order entry requires the form to have loaded while online; the outbox retries with a client UUID.
+- Automated refunds, push/email notifications, and a production-grade payment gateway are not included.
+- This is an internship/demo ERP, not a financial or tax compliance certification. Validate tax and accounting outputs with an authorized professional before production use.

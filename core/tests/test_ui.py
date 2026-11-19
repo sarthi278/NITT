@@ -49,3 +49,23 @@ class ResponsivePagesTests(TestCase):
         self.assertContains(response, "Create an order")
         self.assertContains(response, "My orders")
         self.assertNotContains(response, "Receive stock")
+
+    def test_admin_has_an_administration_dashboard(self):
+        group = Group.objects.create(name="Admin")
+        user = User.objects.create_user(username="admin-dash", password="demo123")
+        user.groups.add(group)
+        self.client.force_login(user)
+
+        response = self.client.get("/dashboard/")
+
+        self.assertContains(response, "Review orders")
+        self.assertContains(response, "Pending review")
+        self.assertNotContains(response, "Log a run")
+
+    def test_authenticated_user_without_a_business_role_is_forbidden(self):
+        user = User.objects.create_user(username="unassigned", password="demo123")
+        self.client.force_login(user)
+
+        response = self.client.get("/dashboard/")
+
+        self.assertEqual(response.status_code, 403)

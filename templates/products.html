@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Products &amp; BOM · Order-to-Audit{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div><h1 class="page-title">Products &amp; BOM</h1><p class="page-subtitle">Maintain saleable pack-size variants, yields, and material requirements.</p></div>
+  <a class="btn btn-success" href="{% url 'product_create' %}">Add product</a>
+</div>
+<form method="get" class="card mb-3"><div class="card-body row g-3 align-items-end">
+  <div class="col-12 col-md-7"><label class="form-label" for="productSearch">Search</label><input id="productSearch" class="form-control" name="q" value="{{ search }}" placeholder="Product name or SKU"></div>
+  <div class="col-8 col-md-3"><label class="form-label" for="productStatus">Status</label><select class="form-select" id="productStatus" name="status"><option value="">All</option><option value="active" {% if status == "active" %}selected{% endif %}>Active</option><option value="inactive" {% if status == "inactive" %}selected{% endif %}>Inactive</option></select></div>
+  <div class="col-4 col-md-2 d-flex gap-2"><button class="btn btn-outline-success flex-grow-1">Filter</button><a class="btn btn-outline-secondary" href="{% url 'products' %}">Clear</a></div>
+</div></form>
+<div class="card"><div class="table-responsive border-0"><table class="table">
+  <thead><tr><th>Product / SKU</th><th>Finished item</th><th>Pack sizes</th><th>BOM yield</th><th>Status</th><th>Actions</th></tr></thead>
+  <tbody>{% for product in products %}
+    <tr>
+      <td><strong>{{ product.name }}</strong><div class="small text-secondary">{{ product.sku }}</div></td>
+      <td>{{ product.finished_item|default:"Not configured" }}</td>
+      <td>{% for pack in product.pack_sizes.all %}<span class="badge text-bg-light me-1">{{ pack.name }} · {{ pack.packet_count }}/pack</span>{% empty %}—{% endfor %}</td>
+      <td>{% if product.bom %}{{ product.bom.batch_yield_packets }} packets{% else %}Not configured{% endif %}</td>
+      <td>{% if product.is_active %}<span class="badge text-bg-success">Active</span>{% else %}<span class="badge text-bg-secondary">Inactive</span>{% endif %}</td>
+      <td><div class="d-flex flex-wrap gap-2"><a class="btn btn-sm btn-outline-success" href="{% url 'product_edit' product.pk %}">Edit</a>
+        <form method="post" action="{% url 'product_toggle_active' product.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary">{% if product.is_active %}Deactivate{% else %}Reactivate{% endif %}</button></form>
+      </div></td>
+    </tr>
+  {% empty %}<tr><td colspan="6" class="text-center text-secondary py-4">No products match this search.</td></tr>{% endfor %}</tbody>
+</table></div></div>
+{% include "pagination.html" with page_obj=products %}
+{% endblock %}

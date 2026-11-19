@@ -2,7 +2,20 @@ from decimal import Decimal
 from django.contrib.auth.models import Group, User
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from core.models import BOM, BOMLine, CompanySettings, Customer, Item, Product, ProductPackSize, Supplier, UnitConversion, StockMovement
+from core.models import (
+    BOM,
+    BOMLine,
+    BOMTemplate,
+    BOMTemplateLine,
+    CompanySettings,
+    Customer,
+    Item,
+    Product,
+    ProductPackSize,
+    StockMovement,
+    Supplier,
+    UnitConversion,
+)
 from core.services.stock import create_movement
 
 
@@ -55,7 +68,10 @@ class Command(BaseCommand):
                 "assigned_salesman": sales_b,
             },
         )
-        Supplier.objects.get_or_create(name="Benchmark Flour Supplier")
+        Supplier.objects.update_or_create(
+            name="Benchmark Flour Supplier",
+            defaults={"state": "Tamil Nadu", "is_active": True},
+        )
 
         flour, _ = Item.objects.update_or_create(
             sku="RM-FLOUR",
@@ -73,6 +89,10 @@ class Command(BaseCommand):
             sku="PK-POUCH",
             defaults={"name": "200 g pouch", "item_type": "PACKAGING", "base_unit": "piece", "is_active": True},
         )
+        pouch_500, _ = Item.objects.update_or_create(
+            sku="PK-POUCH-500",
+            defaults={"name": "500 g pouch", "item_type": "PACKAGING", "base_unit": "piece", "is_active": True},
+        )
         carton, _ = Item.objects.update_or_create(
             sku="PK-CARTON",
             defaults={"name": "Carton", "item_type": "PACKAGING", "base_unit": "piece", "is_active": True},
@@ -80,6 +100,10 @@ class Command(BaseCommand):
         finished, _ = Item.objects.update_or_create(
             sku="FG-MURUKKU-200",
             defaults={"name": "Murukku 200 g", "item_type": "FINISHED", "base_unit": "piece", "hsn_code": "19059030", "is_active": True},
+        )
+        finished_500, _ = Item.objects.update_or_create(
+            sku="FG-MURUKKU-500",
+            defaults={"name": "Murukku 500 g", "item_type": "FINISHED", "base_unit": "piece", "hsn_code": "19059030", "is_active": True},
         )
 
         conversions = [
@@ -91,9 +115,12 @@ class Command(BaseCommand):
             (spice, "kg", "1000"),
             (spice, "g", "1"),
             (pouch, "piece", "1"),
+            (pouch_500, "piece", "1"),
             (carton, "piece", "1"),
             (finished, "packet", "1"),
             (finished, "carton", "20"),
+            (finished_500, "packet", "1"),
+            (finished_500, "carton", "20"),
         ]
         for item, unit, multiplier in conversions:
             UnitConversion.objects.update_or_create(
@@ -107,6 +134,15 @@ class Command(BaseCommand):
             defaults={"name": "Murukku 200 g", "finished_item": finished, "hsn_code": "19059030", "gst_rate": Decimal("5"), "selling_price": Decimal("50.00")},
         )
         ProductPackSize.objects.update_or_create(product=product, name="200 g", defaults={"packet_count": 1})
+        product_500, _ = Product.objects.update_or_create(
+            sku="MUR-500",
+            defaults={"name": "Murukku 500 g", "finished_item": finished_500, "hsn_code": "19059030", "gst_rate": Decimal("5"), "selling_price": Decimal("125.00")},
+        )
+        ProductPackSize.objects.update_or_create(
+            product=product_500,
+            name="500 g",
+            defaults={"packet_count": 1},
+        )
 
         bom, _ = BOM.objects.update_or_create(product=product, defaults={"batch_yield_packets": 200, "tolerance_pct": Decimal("3")})
         bom_lines = [
@@ -123,6 +159,47 @@ class Command(BaseCommand):
                 defaults={"qty_per_batch": Decimal(quantity), "unit": unit},
             )
 
+        bom_500, _ = BOM.objects.update_or_create(
+            product=product_500,
+            defaults={"batch_yield_packets": 80, "tolerance_pct": Decimal("3")},
+        )
+        bom_lines_500 = [
+            (flour, "40", "kg"),
+            (oil, "10", "L"),
+            (spice, "1.200", "kg"),
+            (pouch_500, "80", "piece"),
+            (carton, "4", "piece"),
+        ]
+        for item, quantity, unit in bom_lines_500:
+            BOMLine.objects.update_or_create(
+                bom=bom_500,
+                item=item,
+                defaults={"qty_per_batch": Decimal(quantity), "unit": unit},
+            )
+
+        for template_name, template_bom in (
+            ("Murukku 200 g standard batch", bom),
+            ("Murukku 500 g standard batch", bom_500),
+        ):
+            template, _ = BOMTemplate.objects.update_or_create(
+                name=template_name,
+                defaults={
+                    "batch_yield_packets": template_bom.batch_yield_packets,
+                    "tolerance_pct": template_bom.tolerance_pct,
+                },
+            )
+            for line in template_bom.lines.select_related("item"):
+                BOMTemplateLine.objects.update_or_create(
+                    template=template,
+                    item=line.item,
+                    defaults={
+                        "qty_per_batch": line.qty_per_batch,
+                        "unit": line.unit,
+                    },
+                )
+            template_item_ids = template_bom.lines.values_list("item_id", flat=True)
+            template.components.exclude(item_id__in=template_item_ids).delete()
+
         system = User.objects.get(username="admin")
         openings = [
             (flour, Decimal("100000"), Decimal("42.00"), Decimal("0.042")),
@@ -136,7 +213,7 @@ class Command(BaseCommand):
             if StockMovement.objects.filter(
                 item=item,
                 source_doc_type="OPENING",
-                source_doc_id=1,
+                movement_type=StockMovement.MovementType.OPENING,
             ).exists():
                 continue
             create_movement(
@@ -144,7 +221,7 @@ class Command(BaseCommand):
                 qty_in=quantity,
                 movement_type="OPENING",
                 source_doc_type="OPENING",
-                source_doc_id=1,
+                source_doc_id=item.pk,
                 user=system,
                 unit_cost=unit_cost,
                 unit_cost_base=unit_cost_base,

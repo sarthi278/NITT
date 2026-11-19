@@ -7,9 +7,41 @@
   </div>
 </div>
 {% if role == "Salesman" %}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body"><div class="small text-secondary">Assigned customers</div><div class="fs-3 fw-bold">{{ assigned_customer_count }}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body"><div class="small text-secondary">Orders today</div><div class="fs-3 fw-bold">{{ today_orders }}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body"><div class="small text-secondary">Pending orders</div><div class="fs-3 fw-bold">{{ pending_orders }}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card h-100"><div class="card-body"><div class="small text-secondary">Monthly invoiced sales</div><div class="fs-3 fw-bold">₹{{ monthly_sales }}</div></div></div></div>
+</div>
 <div class="row g-3">
   <div class="col-12 col-sm-6 col-lg-4"><a class="card h-100 text-decoration-none text-reset" href="{% url 'order_create' %}"><div class="card-body"><div class="text-success fw-bold mb-2">01 · Sales</div><h2 class="h5">Create an order</h2><p class="text-secondary mb-0">Submit a customer order from your assigned list.</p></div></a></div>
   <div class="col-12 col-sm-6 col-lg-4"><a class="card h-100 text-decoration-none text-reset" href="{% url 'sales_orders' %}"><div class="card-body"><div class="text-success fw-bold mb-2">02 · Follow-up</div><h2 class="h5">My orders</h2><p class="text-secondary mb-0">Check submitted and invoiced orders.</p></div></a></div>
+</div>
+<div class="card mt-4">
+  <div class="card-header"><h2 class="h6 mb-0">Recent orders</h2></div>
+  <div class="table-responsive border-0">
+    <table class="table">
+      <thead><tr><th>Submitted</th><th>Customer</th><th>Status</th></tr></thead>
+      <tbody>
+      {% for order in recent_orders %}
+        <tr><td>{{ order.submitted_at|date:"d M Y H:i" }}</td><td>{{ order.customer.name }}</td><td>{{ order.get_status_display }}</td></tr>
+      {% empty %}
+        <tr><td colspan="3" class="text-center text-secondary py-4">No orders have been submitted.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% elif role == "Admin" %}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-4"><div class="card h-100"><div class="card-body"><div class="small text-secondary">Orders today</div><div class="fs-3 fw-bold">{{ today_orders }}</div></div></div></div>
+  <div class="col-6 col-lg-4"><div class="card h-100"><div class="card-body"><div class="small text-secondary">Pending review</div><div class="fs-3 fw-bold">{{ pending_orders }}</div></div></div></div>
+  <div class="col-6 col-lg-4"><div class="card h-100"><div class="card-body"><div class="small text-secondary">Invoices today</div><div class="fs-3 fw-bold">{{ today_invoices }}</div></div></div></div>
+</div>
+<div class="row g-3">
+  <div class="col-12 col-sm-6 col-lg-4"><a class="card h-100 text-decoration-none text-reset" href="{% url 'sales_orders' %}"><div class="card-body"><div class="text-success fw-bold mb-2">01 · Sales</div><h2 class="h5">Review orders</h2><p class="text-secondary mb-0">Approve, reject, and invoice submitted orders.</p></div></a></div>
+  <div class="col-12 col-sm-6 col-lg-4"><a class="card h-100 text-decoration-none text-reset" href="{% url 'products' %}"><div class="card-body"><div class="text-success fw-bold mb-2">02 · Masters</div><h2 class="h5">Products &amp; BOM</h2><p class="text-secondary mb-0">Manage products, variants, and production recipes.</p></div></a></div>
+  <div class="col-12 col-sm-6 col-lg-4"><a class="card h-100 text-decoration-none text-reset" href="{% url 'reports' %}"><div class="card-body"><div class="text-success fw-bold mb-2">03 · Control</div><h2 class="h5">Business reports</h2><p class="text-secondary mb-0">Review current sales, inventory, and production.</p></div></a></div>
 </div>
 {% elif role == "Accountant" %}
 <div class="row g-3">

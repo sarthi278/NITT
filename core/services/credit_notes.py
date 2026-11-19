@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from django.db import transaction
 
+from core.audit import record_business_event
 from core.models import (
     CreditNote,
     Dispatch,
@@ -24,12 +25,14 @@ def issue_credit_note(*, invoice, issue_date, reason, created_by):
     if not reason:
         raise ValueError("Enter a reason for the credit note.")
 
-    dispatch = Dispatch.objects.filter(invoice=invoice).first()
     reversal_rows = []
-    if dispatch:
+    dispatch_ids = list(
+        Dispatch.objects.filter(invoice=invoice).values_list("pk", flat=True)
+    )
+    if dispatch_ids:
         movements = StockMovement.objects.filter(
             source_doc_type="DISPATCH",
-            source_doc_id=dispatch.pk,
+            source_doc_id__in=dispatch_ids,
         ).values("item_id", "batch_id", "qty_out", "unit_cost_base")
         movement_totals = {}
         for movement in movements:
@@ -91,4 +94,13 @@ def issue_credit_note(*, invoice, issue_date, reason, created_by):
         )
     invoice.status = Invoice.Status.CREDITED
     invoice.save(update_fields=["status"])
+    record_business_event(
+        action="ISSUE",
+        entity_type="CreditNote",
+        entity_id=credit_note.pk,
+        user=created_by,
+        source_doc_type="INVOICE",
+        source_doc_id=invoice.pk,
+        details={"number": credit_note.number, "total": credit_note.total},
+    )
     return credit_note

@@ -2,6 +2,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
 
+from core.audit import record_business_event
 from core.models import Item, Purchase, PurchaseLine, StockMovement
 from core.services.units import item_unit_multiplier, to_item_base
 from core.services.stock import create_movement
@@ -10,6 +11,8 @@ from core.services.stock import create_movement
 @transaction.atomic
 def post_purchase(*, supplier, item, display_quantity, unit, unit_cost, purchase_date,
                   number, user):
+    if not supplier.is_active:
+        raise ValueError("This supplier is inactive.")
     item = item.__class__.objects.select_for_update().get(pk=item.pk)
     if not item.is_active or item.item_type == Item.ItemType.FINISHED:
         raise ValueError("Only active raw-material or packaging items can be purchased.")
@@ -49,5 +52,14 @@ def post_purchase(*, supplier, item, display_quantity, unit, unit_cost, purchase
         user=user,
         unit_cost=unit_cost,
         unit_cost_base=unit_cost_base,
+    )
+    record_business_event(
+        action="POST",
+        entity_type="Purchase",
+        entity_id=purchase.pk,
+        user=user,
+        source_doc_type="PURCHASE",
+        source_doc_id=purchase.pk,
+        details={"item_id": item.pk, "quantity": quantity},
     )
     return purchase

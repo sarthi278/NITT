@@ -32,6 +32,9 @@ services:
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-local-only-change-me}
       DJANGO_DEBUG: ${DJANGO_DEBUG:-1}
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,0.0.0.0}
+      DJANGO_ENV: ${DJANGO_ENV:-development}
+      BENCHMARK_DEMO_DATABASE: ${BENCHMARK_DEMO_DATABASE:-}
+      BENCHMARK_RESET_ENABLED: ${BENCHMARK_RESET_ENABLED:-0}
     depends_on:
       db:
         condition: service_healthy

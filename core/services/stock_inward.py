@@ -2,6 +2,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.db import IntegrityError, transaction
 
+from core.audit import record_business_event
 from core.models import Item, StockBatch, StockInward, StockMovement
 from core.services.stock import create_movement
 from core.services.units import item_unit_multiplier, to_item_base
@@ -112,5 +113,14 @@ def post_stock_inward(
         source_doc_type="STOCK_INWARD",
         source_doc_id=inward.pk,
         user=user,
+    )
+    record_business_event(
+        action="ADJUSTMENT",
+        entity_type="StockInward",
+        entity_id=inward.pk,
+        user=user,
+        source_doc_type="STOCK_INWARD",
+        source_doc_id=inward.pk,
+        details={"item_id": item.pk, "base_quantity": quantity},
     )
     return inward, True

@@ -85,6 +85,10 @@
             {% endif %}
             {% if group.name == "Admin" or group.name == "Owner" %}
               <a class="nav-link" href="{% url 'sales_orders' %}">Sales orders</a>
+              <a class="nav-link" href="{% url 'products' %}">Products &amp; BOM</a>
+              <a class="nav-link" href="{% url 'customers' %}">Customers</a>
+              <a class="nav-link" href="{% url 'suppliers' %}">Suppliers</a>
+              <a class="nav-link" href="{% url 'price_lists' %}">Price lists</a>
             {% endif %}
             {% if group.name == "Admin" or group.name == "Owner" or group.name == "Accountant" %}
               <a class="nav-link" href="{% url 'payments' %}">Collections</a>

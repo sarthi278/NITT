@@ -3,6 +3,7 @@ from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
 
 from django.db import transaction
 
+from core.audit import record_business_event
 from core.models import (
     CompanySettings,
     Invoice,
@@ -125,6 +126,11 @@ def create_invoice(*, order, posted_by, invoice_date):
         invoice_date=invoice_date,
         customer_gstin=order.customer.gstin,
         company_gstin=settings.gstin,
+        company_name=settings.name,
+        company_address=settings.address,
+        company_state=settings.state,
+        company_phone=settings.phone,
+        company_email=settings.email,
         place_of_supply=order.customer.state,
         taxable_total=taxable_total,
         cgst_total=cgst_total,
@@ -151,6 +157,15 @@ def create_invoice(*, order, posted_by, invoice_date):
         )
         for row in line_data
     ])
+    record_business_event(
+        action="POST",
+        entity_type="Invoice",
+        entity_id=invoice.pk,
+        user=posted_by,
+        source_doc_type="ORDER",
+        source_doc_id=order.pk,
+        details={"number": invoice.number, "line_count": len(line_data)},
+    )
     order.status = Order.Status.INVOICED
     order.save(update_fields=["status", "updated_at"])
     return invoice

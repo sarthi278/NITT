@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from io import BytesIO
 from xml.sax.saxutils import escape
 
@@ -14,6 +14,52 @@ from reportlab.platypus import (
     Table,
     TableStyle,
 )
+
+from core.models import CompanySettings
+
+ONES = (
+    "Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight",
+    "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen",
+    "Sixteen", "Seventeen", "Eighteen", "Nineteen",
+)
+TENS = (
+    "", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy",
+    "Eighty", "Ninety",
+)
+
+
+def _number_to_words(value):
+    if value < 20:
+        return ONES[value]
+    if value < 100:
+        tens, ones = divmod(value, 10)
+        return TENS[tens] + (f" {ONES[ones]}" if ones else "")
+    if value < 1000:
+        hundreds, remainder = divmod(value, 100)
+        result = f"{ONES[hundreds]} Hundred"
+        return result + (f" {_number_to_words(remainder)}" if remainder else "")
+    for scale, name in (
+        (10_000_000, "Crore"),
+        (100_000, "Lakh"),
+        (1_000, "Thousand"),
+    ):
+        if value >= scale:
+            quotient, remainder = divmod(value, scale)
+            result = f"{_number_to_words(quotient)} {name}"
+            return result + (f" {_number_to_words(remainder)}" if remainder else "")
+    return ""
+
+
+def amount_in_words(amount):
+    rounded = Decimal(str(amount)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if not rounded.is_finite() or rounded < 0:
+        raise ValueError("Invoice amount must be a finite, non-negative value.")
+    rupees = int(rounded)
+    paise = int((rounded - Decimal(rupees)) * 100)
+    words = f"Rupees {_number_to_words(rupees)}"
+    if paise:
+        words += f" and {_number_to_words(paise)} Paise"
+    return f"{words} Only"
 
 
 def _display(value):
@@ -99,6 +145,17 @@ def build_report_pdf(*, title, columns, rows, start_date=None, end_date=None):
 
 
 def build_invoice_pdf(invoice):
+    company = CompanySettings.objects.first()
+    company_name = invoice.company_name or (company.name if company else "NIT Demo Snacks")
+    company_address = invoice.company_address or (company.address if company else "")
+    company_state = invoice.company_state or (company.state if company else "")
+    company_gstin = invoice.company_gstin or (company.gstin if company else "")
+    company_contact = " · ".join(
+        value for value in (
+            invoice.company_phone or (company.phone if company else ""),
+            invoice.company_email or (company.email if company else ""),
+        ) if value
+    )
     output = BytesIO()
     document = SimpleDocTemplate(
         output,
@@ -124,6 +181,25 @@ def build_invoice_pdf(invoice):
     )
     story = [
         Paragraph("Tax Invoice", styles["Title"]),
+        Paragraph(escape(company_name), styles["Heading2"]),
+        Paragraph(
+            escape(" · ".join(
+                value for value in (company_address, company_state) if value
+            )),
+            body_style,
+        ),
+        Paragraph(
+            escape(
+                " · ".join(
+                    value for value in (
+                        f"GSTIN {company_gstin}" if company_gstin else "",
+                        company_contact,
+                    )
+                    if value
+                )
+            ),
+            body_style,
+        ),
         Paragraph(
             escape(f"Invoice {invoice.number} · {invoice.invoice_date}"),
             styles["Normal"],
@@ -139,7 +215,7 @@ def build_invoice_pdf(invoice):
         Paragraph(
             escape(
                 f"Place of supply: {invoice.place_of_supply} · "
-                f"Supplier GSTIN {invoice.company_gstin or '—'}"
+                f"Supplier GSTIN {invoice.company_gstin or company_gstin or '—'}"
             ),
             body_style,
         ),
@@ -204,5 +280,12 @@ def build_invoice_pdf(invoice):
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]))
     story.append(total_table)
+    story.append(Spacer(1, 3 * mm))
+    story.append(
+        Paragraph(
+            escape(f"Amount in words: {amount_in_words(invoice.total)}"),
+            body_style,
+        )
+    )
     document.build(story)
     return output.getvalue()

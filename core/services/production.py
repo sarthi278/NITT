@@ -2,6 +2,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from django.db import transaction
 
+from core.audit import record_business_event
 from core.models import (
     BOM,
     Item,
@@ -62,6 +63,8 @@ def post_production_run(
     product = product.__class__.objects.select_for_update().select_related(
         "finished_item"
     ).get(pk=product.pk)
+    if not product.is_active:
+        raise ValueError(f"{product.name} is inactive.")
     if not product.finished_item_id:
         raise ValueError(f"Finished-stock item is not configured for {product.name}.")
     if not product.finished_item.is_active:
@@ -259,4 +262,18 @@ def post_production_run(
 
     yield_variance = variance_percent(good_output, expected_output)
     yield_flagged = abs(yield_variance) > bom.tolerance_pct
+    record_business_event(
+        action="POST",
+        entity_type="ProductionRun",
+        entity_id=run.pk,
+        user=user,
+        source_doc_type="PRODUCTION_RUN",
+        source_doc_id=run.pk,
+        details={
+            "actual_good_output": good_output,
+            "material_cost": material_cost,
+            "total_cost": total_cost,
+            "yield_variance_pct": yield_variance,
+        },
+    )
     return run, consumption_results, yield_variance, yield_flagged

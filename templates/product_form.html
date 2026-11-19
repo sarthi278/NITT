@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}{% if product %}Edit product{% else %}Add product{% endif %} · Order-to-Audit{% endblock %}
+{% block content %}
+<div class="page-heading"><div><h1 class="page-title">{% if product %}Edit product{% else %}Add product{% endif %}</h1><p class="page-subtitle">Configure product identity, packaging, batch yield, and BOM requirements.</p></div><a class="btn btn-outline-secondary" href="{% url 'products' %}">Back to products</a></div>
+{% if product_form.errors or bom_form.errors or line_formset.non_form_errors or pack_formset.non_form_errors %}<div class="alert alert-danger">Review the form errors before saving.</div>{% endif %}
+<form method="post">{% csrf_token %}
+  <div class="card mb-3"><div class="card-header">Product</div><div class="card-body row g-3">
+    {% for field in product_form %}
+      <div class="col-12 col-md-6"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}{% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div>
+    {% endfor %}
+  </div></div>
+  <div class="card mb-3"><div class="card-header">Batch yield</div><div class="card-body row g-3">
+    {% for field in bom_form %}<div class="col-12 col-md-6"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div>{% endfor %}
+  </div></div>
+  <div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center"><span>BOM material lines</span><button type="button" class="btn btn-outline-success btn-sm" id="addBomLine">Add line</button></div><div class="card-body">
+    {{ line_formset.management_form }}{{ line_formset.non_form_errors }}
+    <div id="bomLines">{% for form in line_formset %}<div class="row g-2 align-items-end border-bottom pb-3 mb-3">
+      {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
+      {% for field in form.visible_fields %}<div class="col-12 col-md-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div>{% endfor %}
+    </div>{% endfor %}</div>
+    <template id="emptyBomLine"><div class="row g-2 align-items-end border-bottom pb-3 mb-3">{% for hidden in line_formset.empty_form.hidden_fields %}{{ hidden }}{% endfor %}{% for field in line_formset.empty_form.visible_fields %}<div class="col-12 col-md-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}</div>{% endfor %}</div></template>
+  </div></div>
+  <div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center"><span>Pack-size variants</span><button type="button" class="btn btn-outline-success btn-sm" id="addPackSize">Add pack size</button></div><div class="card-body">
+    {{ pack_formset.management_form }}{{ pack_formset.non_form_errors }}
+    <div id="packSizes">{% for form in pack_formset %}<div class="row g-2 align-items-end border-bottom pb-3 mb-3">{% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}{% for field in form.visible_fields %}<div class="col-12 col-md-4"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div>{% endfor %}</div>{% endfor %}</div>
+    <template id="emptyPackSize"><div class="row g-2 align-items-end border-bottom pb-3 mb-3">{% for hidden in pack_formset.empty_form.hidden_fields %}{{ hidden }}{% endfor %}{% for field in pack_formset.empty_form.visible_fields %}<div class="col-12 col-md-4"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}</div>{% endfor %}</div></template>
+  </div></div>
+  <div class="d-flex justify-content-end gap-2"><a class="btn btn-outline-secondary" href="{% url 'products' %}">Cancel</a><button class="btn btn-success" type="submit">Save product</button></div>
+</form>
+<script>
+  function addInlineRow(buttonId, templateId, containerId, totalId) {
+    document.getElementById(buttonId).addEventListener("click", () => {
+      const total = document.getElementById(totalId);
+      const index = Number(total.value);
+      document.getElementById(containerId).insertAdjacentHTML(
+        "beforeend",
+        document.getElementById(templateId).innerHTML.replace(/__prefix__/g, index)
+      );
+      total.value = index + 1;
+    });
+  }
+  addInlineRow("addBomLine", "emptyBomLine", "bomLines", "id_bom_lines-TOTAL_FORMS");
+  addInlineRow("addPackSize", "emptyPackSize", "packSizes", "id_pack_sizes-TOTAL_FORMS");
+</script>
+{% endblock %}

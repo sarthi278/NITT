@@ -8,13 +8,24 @@
   </div>
   <a class="btn btn-outline-primary" href="{% url 'invoice_pdf' invoice.pk %}">Download PDF</a>
   <div>
-  {% if can_dispatch and not has_dispatch and invoice.status == "POSTED" %}
+  {% if can_dispatch and dispatch_lines and invoice.status == "POSTED" %}
   <form method="post" action="{% url 'invoice_dispatch' invoice.pk %}">
     {% csrf_token %}
-    <button class="btn btn-success" type="submit">Dispatch invoice</button>
+    <input type="hidden" name="submission_key" value="{{ dispatch_submission_key }}">
+    {% for row in dispatch_lines %}
+      <label class="visually-hidden" for="dispatch-{{ row.line.pk }}">Dispatch {{ row.line.product_name }}</label>
+      <div class="input-group mb-2">
+        <span class="input-group-text">{{ row.line.product_name }} · {{ row.remaining }} remaining</span>
+        <input class="form-control" id="dispatch-{{ row.line.pk }}" name="quantity_{{ row.line.pk }}"
+               type="number" min="0" max="{{ row.remaining }}" step="0.001" value="{{ row.remaining }}">
+      </div>
+    {% endfor %}
+    <button class="btn btn-success" type="submit">Post dispatch</button>
   </form>
-  {% elif has_dispatch %}
+  {% elif has_dispatch and not dispatch_lines %}
   <span class="badge text-bg-success">Dispatched</span>
+  {% elif has_dispatch %}
+  <span class="badge text-bg-warning">Partially dispatched</span>
   {% endif %}
   </div>
 </div>
@@ -64,6 +75,29 @@
     </table>
   </div>
 </div>
+{% if dispatches %}
+<div class="card mt-4">
+  <div class="card-header"><h2 class="h6 mb-0">Dispatch history</h2></div>
+  <div class="table-responsive border-0">
+    <table class="table">
+      <thead><tr><th>Dispatch</th><th>Date</th><th>Items</th></tr></thead>
+      <tbody>
+      {% for dispatch in dispatches %}
+        <tr>
+          <td>#{{ dispatch.pk }}</td>
+          <td>{{ dispatch.dispatch_date }}</td>
+          <td>
+            {% for line in dispatch.lines.all %}
+              <span class="d-block">{{ line.invoice_line.product_name }} · {{ line.quantity }}</span>
+            {% endfor %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 {% if can_credit and invoice.status == "POSTED" %}
 <div class="card mt-4">
   <div class="card-header"><h2 class="h6 mb-0">Issue credit note</h2></div>
